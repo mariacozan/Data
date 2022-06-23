@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
     <list default="true" id="bf6310d4-549d-4983-98fc-60c8565bbdee" name="Default Changelist" comment="" />
     <option name="SHOW_DIALOG" value="false" />
@@ -18,22 +21,31 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="JupyterTrust" id="38d40d7a-ea1f-4229-bfd6-c33674a1e324" />
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
   <component name="ProjectId" id="29qakEALRpRzEH8B706Y4y5gXaF" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">
-    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
-    <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
-    <property name="node.js.detected.package.eslint" value="true" />
-    <property name="node.js.detected.package.tslint" value="true" />
-    <property name="node.js.path.for.package.eslint" value="project" />
-    <property name="node.js.path.for.package.tslint" value="project" />
-    <property name="node.js.selected.package.eslint" value="(autodetect)" />
-    <property name="node.js.selected.package.tslint" value="(autodetect)" />
-    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/dev/workspaces/2p/TwoP&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\dev\workspaces\2p\TwoP" />
+    </key>
   </component>
   <component name="RunManager">
     <configuration default="true" type="PythonConfigurationType" factoryName="Python">
@@ -68,84 +80,13 @@
       <option name="presentableId" value="Default" />
       <updated>1653843211042</updated>
       <workItem from="1653843212923" duration="8621000" />
+      <workItem from="1653853035105" duration="23732000" />
+      <workItem from="1655714626864" duration="16194000" />
+      <workItem from="1655917534996" duration="1571000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
-  </component>
-  <component name="WindowStateProjectService">
-    <state x="586" y="1278" key="#Inspections" timestamp="1653848171097">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state x="586" y="1278" key="#Inspections/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653848171097" />
-    <state x="414" y="1254" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1653850455651">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state x="414" y="1254" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653850455651" />
-    <state x="739" y="1354" key="FileChooserDialogImpl" timestamp="1653843426613">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state x="739" y="1354" key="FileChooserDialogImpl/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653843426613" />
-    <state width="1877" height="348" key="GridCell.Tab.0.bottom" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.0.bottom/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state width="1877" height="348" key="GridCell.Tab.0.center" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.0.center/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state width="1877" height="348" key="GridCell.Tab.0.left" timestamp="1653852284711">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.0.left/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284711" />
-    <state width="1877" height="348" key="GridCell.Tab.0.right" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.0.right/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state width="1877" height="348" key="GridCell.Tab.1.bottom" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.1.bottom/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state width="1877" height="348" key="GridCell.Tab.1.center" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.1.center/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state width="1877" height="348" key="GridCell.Tab.1.left" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.1.left/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state width="1877" height="348" key="GridCell.Tab.1.right" timestamp="1653852284712">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state width="1877" height="348" key="GridCell.Tab.1.right/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653852284712" />
-    <state x="461" y="1244" key="SettingsEditor" timestamp="1653844259239">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state x="461" y="1244" key="SettingsEditor/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653844259239" />
-    <state x="512" y="1328" key="com.intellij.xdebugger.impl.breakpoints.ui.BreakpointsDialogFactory$2" timestamp="1653850529888">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state x="512" y="1328" key="com.intellij.xdebugger.impl.breakpoints.ui.BreakpointsDialogFactory$2/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653850529888" />
-    <state x="623" y="1305" width="672" height="678" key="search.everywhere.popup" timestamp="1653847284782">
-      <screen x="0" y="1080" width="1920" height="1040" />
-    </state>
-    <state x="623" y="1305" width="672" height="678" key="search.everywhere.popup/0.0.1920.1040/0.1080.1920.1040@0.1080.1920.1040" timestamp="1653847284782" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/TwoP/preprocess_traces.py</url>
-          <line>7</line>
-          <option name="timeStamp" value="4" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/TwoP/preprocess_traces.py</url>
-          <line>1</line>
-          <option name="timeStamp" value="5" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
 </project>
