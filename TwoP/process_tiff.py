@@ -9,7 +9,7 @@ def register_zstack():
 
 
 # TODO
-def extract_zprofiles(ROI_masks, neuropil_masks, zstack, neuropil_correction):
+def extract_zprofiles(ROI_masks, neuropil_masks, zstack, target_image, neuropil_correction):
     """
     Extracts fluorescence of ROIs across depth of z-stack.
 
@@ -24,6 +24,9 @@ def extract_zprofiles(ROI_masks, neuropil_masks, zstack, neuropil_correction):
         Pixel masks of ROI's neuropil in space (x- and y-axis).
     zstack : np.array [x x y x z]
         Registered z-stack where slices are oriented the same way as imaged planes (output of register_zstack).
+    target_image : np.array [x x y]
+        Image used by suite2p to align frames to. Is needed to align z-stack to this image and then apply masks at
+        correct positions.
     neuropil_correction : np.array [nROIs]
         Correction factors determined by preprocess_traces.correct_neuropil.
 
@@ -35,9 +38,10 @@ def extract_zprofiles(ROI_masks, neuropil_masks, zstack, neuropil_correction):
 
     """
     Steps
-    1) Extract fluorescence within ROI masks across all slices of z-stack.
-    2) Extract fluorescence within neuropil masks across all slices of z-stack.
-    3) Perform neuropil correction on ROI traces using neuropil traces and correction factors.
+    1) Register z-stack to target image.
+    2) Extract fluorescence within ROI masks across all slices of z-stack.
+    3) Extract fluorescence within neuropil masks across all slices of z-stack.
+    4) Perform neuropil correction on ROI traces using neuropil traces and correction factors.
     """
 
     return zprofiles
