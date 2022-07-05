@@ -1,11 +1,33 @@
 """Pre-process tiff files."""
 
-# TODO. Also: return new planes following a certain angle through the z-stack. New plane should follow movement trace of
-# piezo.
+
 import numpy as np
 
 
-def register_zstack():
+# TODO. Also: return new planes following a certain angle through the z-stack. New plane should follow movement trace of
+# piezo.
+def register_zstack(tiff_path, piezo=None):
+    """
+    Loads tiff file containing imaged z-stack, aligns all frames to each other, averages across repetitions, and (if
+    piezo not None) reslices the 3D z-stack so that slant/orientation of the new slices matches the slant of the frames
+    imaged during experiments (slant given by piezo trace).
+
+    Parameters
+    ----------
+    tiff_path : String
+        Path to tiff file containing z-stack.
+    piezo : np.array [t]
+        Movement of piezo across z-axis for one plane. Unit: microns.
+    [Note: need to add more input arguments depending on how registration works. Piezo movement might need to provided
+    in units of z-stack slices if tiff header does not contain information about depth in microns]
+
+    Returns
+    -------
+    zstack : np.array [x x y x z]
+        Registered (and resliced) z-stack.
+    """
+
+    return zstack
 
 
 # TODO
