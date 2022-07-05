@@ -64,6 +64,12 @@ def extract_zprofiles(ROI_masks, neuropil_masks, zstack, target_image, neuropil_
     2) Extract fluorescence within ROI masks across all slices of z-stack.
     3) Extract fluorescence within neuropil masks across all slices of z-stack.
     4) Perform neuropil correction on ROI traces using neuropil traces and correction factors.
+    
+    Notes (useful functions in suite2p);
+    - neuropil masks are created in /suite2p/extraction/masks.create_neuropil_masks called from masks.create_masks
+    - ROI and neuropil traces extracted in /suite2p/extraction/extract.extract_traces called from 
+      extract.extraction_wrapper
+    - to register frames, see line 285 (rigid registration) in /suite2p/registration/register for rigid registration
     """
 
     return zprofiles
