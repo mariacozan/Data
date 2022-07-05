@@ -1,2 +1,2 @@
-# 2p
-For pre-processing two-photon data
+# Data
+For pre-processing raw data (two-photon, ephys, bonsai, ...) and loading/saving data.
