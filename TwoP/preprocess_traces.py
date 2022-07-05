@@ -1,7 +1,6 @@
 """Pre-process calcium traces extracted from tiff files."""
 import numpy as np
 from scipy import optimize
-from scipy import stats
 
 
 def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, prctl_F=5, verbose=True):
@@ -82,6 +81,48 @@ def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, 
         signal[:, iROI] = iF - res[1] * iN
 
     return signal, regPars, F_binValues, N_binValues
+
+
+# TODO
+def correct_zmotion(F, zprofiles, ztrace):
+    """
+    Corrects changes in fluorescence due to brain movement along z-axis (depth). Method is based on algorithm
+    described in Ryan, ..., Lagnado (J Physiol, 2020)
+
+    Parameters
+    ----------
+    F : np.array [t x nROIs]
+        Calcium traces (measured signal) of ROIs from a single(!) plane. It is assumed that these are neuropil corrected!
+    zprofiles : np.array [slices x nROIs]
+        Fluorescence profiles of ROIs across depth of z-stack. These profiles are assumed to be neuropil corrected!
+    ztrace : np.array [t]
+        Depth of each frame of the imaged plane. Indices in this array refer to slices in zprofiles.
+
+    Returns
+    -------
+    signal : np.array [t x nROIs]
+        Z-corrected calcium traces.
+    """
+
+    """
+    Steps
+    1) Smooth z-profile of each ROI using Moffat function.
+    2) Create correction vector based on z-profiles and ztrace.
+    3) Correct calcium traces using correction vector.
+    """
+    return signal
+
+
+# TODO
+def register_zaxis():
+
+
+# TODO
+def get_F0():
+
+
+# TODO
+def get_delta_F_over_F():
 
 
 def _linear(x, a, b):
