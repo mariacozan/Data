@@ -61,7 +61,7 @@ def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, 
         # divide neuropil values into numN groups
         binSize = (N_prct[1] - N_prct[0]) / numN
         # get neuropil values regularly spaced across range between minNp and maxNp
-        N_binValues[:, iROI] = N_prct[0] + (np.arange(stop=numN) + 1) * binSize
+        N_binValues[:, iROI] = N_prct[0] + (np.arange(0,stop=numN) + 1) * binSize
 
         # discretize values of neuropil between minN and maxN, with numN elements
         # N_ind contains values: 0...binSize for N values within minNp and maxNp
@@ -72,9 +72,14 @@ def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, 
             tmp = np.ones_like(iF) * np.nan
             tmp[N_ind == iN] = iF[N_ind == iN]
             F_binValues[iN, iROI] = np.nanpercentile(tmp, prctl_F, 0)
-
+        
+        
+        #Fit only non-nan values
+        noNan = np.where(~np.isnan(F_binValues[:, iROI]) & ~np.isnan(N_binValues[:, iROI] ))[0]
+        
+        
         # perform linear regression between neuropil and signal bins under constraint that 0<slope<2
-        res, _ = optimize.curve_fit(_linear, N_binValues[:, iROI], F_binValues[:, iROI],
+        res, _ = optimize.curve_fit(_linear, N_binValues[noNan, iROI], F_binValues[noNan, iROI],
                                     p0=(np.nanmean(F_binValues[:, iROI]), 0), bounds=([-np.inf, 0], [np.inf, 2]))
         regPars[:, iROI] = res
         # determine neuropil correct signal
@@ -115,15 +120,16 @@ def correct_zmotion(F, zprofiles, ztrace):
 
 # TODO
 def register_zaxis():
+    None
 
 
 # TODO
 def get_F0():
-
+    None
 
 # TODO
 def get_delta_F_over_F():
-
+    None
 
 def _linear(x, a, b):
     return a + b * x
