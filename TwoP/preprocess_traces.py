@@ -115,6 +115,18 @@ def correct_zmotion(F, zprofiles, ztrace):
     2) Create correction vector based on z-profiles and ztrace.
     3) Correct calcium traces using correction vector.
     """
+    
+    # Step 1 - Consider smoothing instead of a Moffat function. Considering how our stacks look
+    zprofiles_smoothed = sp.signal.savgol_filter(zprofiles,20,5,axis=0)
+    # find correction factor
+    referenceDepth = np.round(np.median(ztrace))
+    correctionFactor = zprofiles_smoothed/zprofiles_smoothed[referenceDepth,:]
+    
+    # Step 2 - If taking the raw data from ops need to get the correct frame ...
+    # by taking the max correlation for each time point   
+    correctionMatrix = correctionFactor[ztrace,:]
+    # Step 3 - Correct   
+    signal = F / correctionMatrix
     return signal
 
 

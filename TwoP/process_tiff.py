@@ -7,6 +7,7 @@ import pandas as pd
 import skimage
 from skimage import io
 from skimage import data
+from skimage import metrics
 from skimage.util import img_as_float
 import tifftools as tt
 from pystackreg import StackReg
@@ -218,12 +219,6 @@ def extract_zprofiles(extraction_path, ROI_masks, neuropil_masks, zstack, target
         zProfile = np.fmax(zProfile,np.ones(zProfile.shape)*Fbl)
         zProfile = zProfile.T
     zProfileC = np.zeros(zProfile.shape)
-    
-    zeroStack = np.zeros(zstack.shape[0])
-    for i in range(zstack.shape[0]):
-        corr = sp.signal.correlate(refImg,zstack[i,:,:])
-        zeroStack[i] = np.max(corr)    
-    zeroInd = np.argmax(zeroStack)
     
     depths = np.arange(-(zstack.shape[0]-1)/2,(zstack.shape[0]-1)/2+1)
     
