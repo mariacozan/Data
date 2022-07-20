@@ -124,7 +124,7 @@ def DetectPhotodiodeChanges(photodiode,plot=False,kernel = 101,upThreshold = 0.2
 
     return crossings/fs
 
-def DetectWheelMove(moveA,moveB,rev_res = 1024, total_track = 598.47,plot=False):
+def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 598.47, plot=False):
     """
     The function detects the wheel movement. 
     At the moment uses only moveA.    
@@ -137,66 +137,84 @@ def DetectWheelMove(moveA,moveB,rev_res = 1024, total_track = 598.47,plot=False)
     
     plot: plot to inspect, default = False   
     
-    returns: distance
+    returns: velocity[cm/s], distance [cm]
     """
     
     
     # make sure all is between 1 and 0
-    moveB = -moveB
-    moveA /= np.max(moveA)
-    moveA -= np.min(moveA)
-    moveB -= np.min(moveB)
-    moveB /= np.max(moveB)
+    # moveB = -moveB
+    # moveA /= np.max(moveA)
+    # moveA -= np.min(moveA)
+    # moveB -= np.min(moveB)
+    # moveB /= np.max(moveB)
     moveA = np.round(moveA).astype(bool)
     moveB = np.round(moveB).astype(bool)
+    counterA = np.zeros(len(moveA))
+    counterB = np.zeros(len(moveB))
     
     # detect A move
-    ADiff = np.where(np.diff(moveA>0,prepend=True))[0]
+    risingEdgeA = np.where(np.diff(~moveA>0,prepend=True))[0]
+    risingEdgeA = risingEdgeA[moveA[risingEdgeA]==1]
+    risingEdgeA_B = moveB[risingEdgeA]
+    counterA[risingEdgeA[risingEdgeA_B==0]]=1
+    counterA[risingEdgeA[risingEdgeA_B==1]]=-1
     
     # Ast = np.where(ADiff >0.5)[0]
     # Aet = np.where(ADiff <-0.5)[0]
     
     # detect B move
-    BDiff = np.where(np.diff(moveB>0,prepend=True))[0]#np.diff(moveB)
+    risingEdgeB = np.where(np.diff(moveB>0,prepend=True))[0]#np.diff(moveB)
+    risingEdgeB = risingEdgeB[moveB[risingEdgeB]==1]
+    risingEdgeB_A = moveB[risingEdgeB]
+    counterA[risingEdgeB[risingEdgeB_A==0]]=-1
+    counterA[risingEdgeB[risingEdgeB_A==1]]=1
     
     # Bst = np.where(BDiff >0.5)[0]
     # Bet = np.where(BDiff <-0.5)[0]
     
-    #Correct possible problems for end of recording
-    if (len(Ast)>len(Aet)):
-        Aet = np.hstack((Aet,[len(moveA)]))
-    elif (len(Ast)<len(Aet)):
-        Ast = np.hstack(([0],Ast))   
     
-    
+     
     dist_per_move = total_track/rev_res
     
-    # Make into distance
-    track = np.zeros(len(moveA))
-    track[Ast] = dist_per_move
+    # # Make into distance
+    # track = np.zeros(len(moveA))
+    # track[Ast] = dist_per_move
     
-    distance = np.cumsum(track)
+    instDist = counterA*dist_per_move/10
+    distance = np.cumsum(instDist)
+    
+    averagingTime = 1/np.median(np.diff(timestamps))
+    sumKernel = np.ones(250)
+    tsKernel = np.zeros(250)
+    tsKernel[0]=1
+    tsKernel[-1]=-1
+    
+    # take window sum and convert to cm
+    distWindow = np.convolve(instDist,sumKernel,'same')
+    # count time elapsed
+    timeElapsed = np.convolve(timestamps,tsKernel,'same')
+    
+    velocity = distWindow/timeElapsed
+    # if (plot):
+    #     f,ax = plt.subplots(3,1,sharex=True)
+    #     ax[0].plot(moveA)
+    #     # ax.plot(np.abs(ADiff))
+    #     ax[0].plot(Ast,np.ones(len(Ast)),'k*')
+    #     ax[0].plot(Aet,np.ones(len(Aet)),'r*')
+    #     ax[0].set_xlabel('time (ms)')
+    #     ax[0].set_ylabel('Amplitude (V)')
         
-    if (plot):
-        f,ax = plt.subplots(3,1,sharex=True)
-        ax[0].plot(moveA)
-        # ax.plot(np.abs(ADiff))
-        ax[0].plot(Ast,np.ones(len(Ast)),'k*')
-        ax[0].plot(Aet,np.ones(len(Aet)),'r*')
-        ax[0].set_xlabel('time (ms)')
-        ax[0].set_ylabel('Amplitude (V)')
+    #     ax[1].plot(distance)
+    #     ax[1].set_xlabel('time (ms)')
+    #     ax[1].set_ylabel('distance (mm)')
         
-        ax[1].plot(distance)
-        ax[1].set_xlabel('time (ms)')
-        ax[1].set_ylabel('distance (mm)')
-        
-        ax[2].plot(track)
-        ax[2].set_xlabel('time (ms)')
-        ax[2].set_ylabel('Move')
+    #     ax[2].plot(track)
+    #     ax[2].set_xlabel('time (ms)')
+    #     ax[2].set_ylabel('Move')
     
     # movFirst = Amoves>Bmoves
     
-    return distance
+    return velocity, distance
   
 def GetSparseNoise(filePath, size=(20,25)):
     """
@@ -346,18 +364,18 @@ def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
         shifting the time either forward or backwards in relation to the faster acquisition.
 
     '''
-    niTick = nidaqSync.astype(bool)
-    ardTick = ardSync.astype(bool)
+    niTick = np.round(nidaqSync).astype(bool)
+    ardTick = np.round(ardSync).astype(bool)
     
     niChange = np.where(np.diff(niTick,prepend=True)>0)[0][1:]    
     niChangeTime = niTimes[niChange]
     niChangeDuration = np.round(np.diff(niChangeTime),4)
     
     ardChange = np.where(np.diff(ardTick,prepend=True)>0)[0][1:]
-    ardchangeTime = arduinoTime[ardChange]
+    ardchangeTime = ardTimes[ardChange]
     ardChangeDuration = np.round(np.diff(ardchangeTime),4)
     
-    lags = np.arange(-len(changeDuration) + 1, len(ardChangeDuration))
+    lags = np.arange(-len(niChangeDuration) + 1, len(ardChangeDuration))
     corr = np.correlate(niChangeDuration,ardChangeDuration,mode='full')
     
     timeShift = lags[np.argmax(corr)]
