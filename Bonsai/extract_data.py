@@ -309,10 +309,11 @@ def GetArduinoData(arduinoFilePath,th = 3,plot=False):
     
     arduinoTime = csvChannels[:,-1]
     arduinoTimeDiff = np.diff(arduinoTime,prepend=True)
-    normalTimeDiff = np.where(arduinoTimeDiff>3)[0]
+    normalTimeDiff = np.where(arduinoTimeDiff>-100)[0]
     csvChannels = csvChannels[normalTimeDiff,:]
     # convert time to second (always in ms)
     arduinoTime = csvChannels[:,-1]/1000 
+    # Start arduino time at zero
     arduinoTime-=arduinoTime[0]
     csvChannels = csvChannels[:,:-1]
     numChannels = csvChannels.shape[1]
@@ -324,3 +325,52 @@ def GetArduinoData(arduinoFilePath,th = 3,plot=False):
     
     return csvChannels,arduinoTime
 
+def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
+    '''
+    
+
+    Parameters
+    ----------
+    nidaqSync : array like
+        The synchronisation signal from the nidaq or any non-arduino acquisiton system.
+    ardSync : array like
+        The synchronisation signal from the arduino.    
+    niTimes : array ike [s]
+        the timestamps of the acqusition signal .
+    ardTimes : array ike [s]
+        the timestamps of the arduino signal .
+
+    Returns
+    -------
+    newArdTimes : the corrected arduino signal
+        shifting the time either forward or backwards in relation to the faster acquisition.
+
+    '''
+    niTick = nidaqSync.astype(bool)
+    ardTick = ardSync.astype(bool)
+    
+    niChange = np.where(np.diff(niTick,prepend=True)>0)[0][1:]    
+    niChangeTime = niTimes[niChange]
+    niChangeDuration = np.round(np.diff(niChangeTime),4)
+    
+    ardChange = np.where(np.diff(ardTick,prepend=True)>0)[0][1:]
+    ardchangeTime = arduinoTime[ardChange]
+    ardChangeDuration = np.round(np.diff(ardchangeTime),4)
+    
+    lags = np.arange(-len(changeDuration) + 1, len(ardChangeDuration))
+    corr = np.correlate(niChangeDuration,ardChangeDuration,mode='full')
+    
+    timeShift = lags[np.argmax(corr)]
+    
+    temporalShift = -np.sign(timeShift)*(niChangeTime[np.abs(timeShift)]-ardChangeTime[0])
+    
+    newArdTimes = ardTimes.copy()
+    newArdTimes+=temporalShift
+    
+    return newArdTimes
+    
+    
+    
+    
+    
+    
