@@ -124,7 +124,7 @@ def DetectPhotodiodeChanges(photodiode,plot=False,kernel = 101,upThreshold = 0.2
 
     return crossings/fs
 
-def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 598.47, plot=False):
+def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 59.847, plot=False):
     """
     The function detects the wheel movement. 
     At the moment uses only moveA.    
@@ -132,60 +132,43 @@ def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 598.47,
     Parameters: 
     moveA,moveB: the first and second channel of the rotary encoder
     rev_res: the rotary encoder resoution, default =1024
-    total_track: the total length of the track, default = 598.47 (mm)
+    total_track: the total length of the track, default = 59.847 (cm)
     kernel: the kernel for median filtering, default = 101.
     
     plot: plot to inspect, default = False   
     
     returns: velocity[cm/s], distance [cm]
     """
-    
-    
-    # make sure all is between 1 and 0
-    # moveB = -moveB
-    # moveA /= np.max(moveA)
-    # moveA -= np.min(moveA)
-    # moveB -= np.min(moveB)
-    # moveB /= np.max(moveB)
+  
     moveA = np.round(moveA).astype(bool)
     moveB = np.round(moveB).astype(bool)
     counterA = np.zeros(len(moveA))
     counterB = np.zeros(len(moveB))
     
     # detect A move
-    risingEdgeA = np.where(np.diff(~moveA>0,prepend=True))[0]
+    risingEdgeA = np.where(np.diff(moveA>0,prepend=True))[0]
     risingEdgeA = risingEdgeA[moveA[risingEdgeA]==1]
     risingEdgeA_B = moveB[risingEdgeA]
     counterA[risingEdgeA[risingEdgeA_B==0]]=1
-    counterA[risingEdgeA[risingEdgeA_B==1]]=-1
-    
-    # Ast = np.where(ADiff >0.5)[0]
-    # Aet = np.where(ADiff <-0.5)[0]
+    counterA[risingEdgeA[risingEdgeA_B==1]]=-1     
+
     
     # detect B move
     risingEdgeB = np.where(np.diff(moveB>0,prepend=True))[0]#np.diff(moveB)
     risingEdgeB = risingEdgeB[moveB[risingEdgeB]==1]
     risingEdgeB_A = moveB[risingEdgeB]
     counterA[risingEdgeB[risingEdgeB_A==0]]=-1
-    counterA[risingEdgeB[risingEdgeB_A==1]]=1
-    
-    # Bst = np.where(BDiff >0.5)[0]
-    # Bet = np.where(BDiff <-0.5)[0]
-    
-    
-     
+    counterA[risingEdgeB[risingEdgeB_A==1]]=1    
+
+
     dist_per_move = total_track/rev_res
     
-    # # Make into distance
-    # track = np.zeros(len(moveA))
-    # track[Ast] = dist_per_move
-    
-    instDist = counterA*dist_per_move/10
+    instDist = counterA*dist_per_move
     distance = np.cumsum(instDist)
     
-    averagingTime = 1/np.median(np.diff(timestamps))
-    sumKernel = np.ones(250)
-    tsKernel = np.zeros(250)
+    averagingTime = int(np.round(1/np.median(np.diff(timestamps))))
+    sumKernel = np.ones(averagingTime)
+    tsKernel = np.zeros(averagingTime)
     tsKernel[0]=1
     tsKernel[-1]=-1
     
@@ -370,13 +353,15 @@ def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
     niChange = np.where(np.diff(niTick,prepend=True)>0)[0][1:]    
     niChangeTime = niTimes[niChange]
     niChangeDuration = np.round(np.diff(niChangeTime),4)
+    niChangeDuration_norm = (niChangeDuration-np.mean(niChangeDuration))/np.std(niChangeDuration)
     
     ardChange = np.where(np.diff(ardTick,prepend=True)>0)[0][1:]
     ardchangeTime = ardTimes[ardChange]
     ardChangeDuration = np.round(np.diff(ardchangeTime),4)
+    ardChangeDuration_norm = (ardChangeDuration-np.mean(ardChangeDuration))/np.std(ardChangeDuration)
     
     lags = np.arange(-len(niChangeDuration) + 1, len(ardChangeDuration))
-    corr = np.correlate(niChangeDuration,ardChangeDuration,mode='full')
+    corr = np.correlate(niChangeDuration_norm,ardChangeDuration_norm,mode='full')
     
     timeShift = lags[np.argmax(corr)]
     
