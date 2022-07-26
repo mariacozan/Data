@@ -150,7 +150,8 @@ def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 59.847,
     risingEdgeA = risingEdgeA[moveA[risingEdgeA]==1]
     risingEdgeA_B = moveB[risingEdgeA]
     counterA[risingEdgeA[risingEdgeA_B==0]]=1
-    counterA[risingEdgeA[risingEdgeA_B==1]]=-1     
+    counterA[risingEdgeA[risingEdgeA_B==1]]=-1    
+    
 
     
     # detect B move
@@ -159,6 +160,7 @@ def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 59.847,
     risingEdgeB_A = moveB[risingEdgeB]
     counterA[risingEdgeB[risingEdgeB_A==0]]=-1
     counterA[risingEdgeB[risingEdgeB_A==1]]=1    
+    
 
 
     dist_per_move = total_track/rev_res
@@ -326,6 +328,14 @@ def GetArduinoData(arduinoFilePath,th = 3,plot=False):
     
     return csvChannels,arduinoTime
 
+def _linearAnalyticalSolution(x,y):
+    n = len(x)
+    a = (np.sum(y)*np.sum(x**2)-np.sum(x)*np.sum(x*y))/(n*np.sum(x**2)-np.sum(x)**2)
+    b = (n*np.sum(x*y)-np.sum(x)*np.sum(y))/(n*np.sum(x**2)-np.sum(x)**2)
+    mse = (np.sum((y-(a+b*x))**2))/n
+    return a,b,mse
+    
+
 def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
     '''
     
@@ -350,26 +360,51 @@ def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
     niTick = np.round(nidaqSync).astype(bool)
     ardTick = np.round(ardSync).astype(bool)
     
-    niChange = np.where(np.diff(niTick,prepend=True)>0)[0][1:]    
+    
+    
+    niChange = np.where(np.diff(niTick,prepend=True)>0)[0][10:]    
     niChangeTime = niTimes[niChange]
     niChangeDuration = np.round(np.diff(niChangeTime),4)
     niChangeDuration_norm = (niChangeDuration-np.mean(niChangeDuration))/np.std(niChangeDuration)
     
-    ardChange = np.where(np.diff(ardTick,prepend=True)>0)[0][1:]
-    ardchangeTime = ardTimes[ardChange]
-    ardChangeDuration = np.round(np.diff(ardchangeTime),4)
-    ardChangeDuration_norm = (ardChangeDuration-np.mean(ardChangeDuration))/np.std(ardChangeDuration)
+    ardChange = np.where(np.diff(ardTick,prepend=True)>0)[0][10:]
+    ardChangeTime = ardTimes[ardChange]
+    ardChangeDuration = np.round(np.diff(ardChangeTime),4)
+    ardChangeDuration_norm = (ardChangeDuration-np.mean(ardChangeDuration))/np.std(ardChangeDuration)   
     
-    lags = np.arange(-len(niChangeDuration) + 1, len(ardChangeDuration))
-    corr = np.correlate(niChangeDuration_norm,ardChangeDuration_norm,mode='full')
     
-    timeShift = lags[np.argmax(corr)]
+    mses = []
+    mse_prev = 10**4
+    a = 0
+    b = 0
+    for i in range(len(niChangeTime)):
+        x = ardChangeTime
+        y = niChangeTime[i:min(i+len(ardChangeTime),len(niChangeTime))]
+        lenDif = len(x)-len(y)
+        if (lenDif>0):
+            x = x[:-lenDif]
+        a_,b_,mse = _linearAnalyticalSolution(x,y)
+        mses.append(mse)
+        if (mse>=mse_prev):
+            break;
+        mse_prev = mse
+        a = a_
+        b = b_
+        
+    # lags = np.arange(-len(niChangeDuration_norm) + 1, len(ardChangeDuration_norm))
+    # corr = np.correlate(niChangeDuration,ardChangeDuration,mode='full')
     
-    temporalShift = -np.sign(timeShift)*(niChangeTime[np.abs(timeShift)]-ardChangeTime[0])
+    # timeShift = lags[np.argmax(corr)]
+    
+    # temporalShift = -np.sign(timeShift)*(niChangeTime[np.abs(timeShift)]-ardchangeTime[0])
     
     newArdTimes = ardTimes.copy()
-    newArdTimes+=temporalShift
     
+    # newArdTimes+=temporalShift
+    newArdTimes = a + b*newArdTimes
+    
+    
+     
     return newArdTimes
     
     

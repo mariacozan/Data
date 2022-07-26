@@ -22,12 +22,12 @@ props = ['Ori','SFreq','TFreq','Contrast']
 stimProps = GetStimulusInfo(directory+'Log0.csv',props)
 
 #%%
-arduino,arduinoTime = GetArduinoData(directory+'ArduinoInput0.csv',plot=False)
-arduinoSync = arduino[:,-1]
-niSync = nidaq[:,-1]
+arduino,arduinoTime = GetArduinoData(directory+'ArduinoInput0.csv',plot=True)
+arduinoSync = np.round(arduino[:,-1]).astype(bool)
+niSync = np.round(nidaq[:,-1]).astype(bool)
 niTimes = np.arange(len(niSync))/1000
 
-
+#%%
 newTime = arduinoDelayCompensation(niSync,arduinoSync, niTimes,arduinoTime)
 
 #%%
@@ -36,3 +36,8 @@ movement2 =  arduino[:,1]
 DetectWheelMove(movement1,movement2,arduinoTime)
 
 #%%
+camera1 = arduino[:,2]
+st = AssignFrameTime(camera1,plot=True)
+
+import cv2
+cap = cv2.VideoCapture(directory+'Video0.avi')

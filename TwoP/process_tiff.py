@@ -154,7 +154,7 @@ def _gauss(x, A,mu,sigma):
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
 # TODO
 
-def extract_zprofiles(extraction_path, ROI_masks, neuropil_masks, zstack, target_image, neuropil_correction = None, smootingFactor = 2):
+def extract_zprofiles(extraction_path, zstack, target_image, neuropil_correction = None, ROI_masks = None, neuropil_masks = None, smootingFactor = 2):
     """
     Extracts fluorescence of ROIs across depth of z-stack.
 
@@ -207,8 +207,9 @@ def extract_zprofiles(extraction_path, ROI_masks, neuropil_masks, zstack, target
     # res = register_frames(refImg, zstack.astype(np.int16), rmin=ops['rmin'], rmax=ops['rmax'], bidiphase=ops['bidiphase'], ops=ops, nZ=1)    
     # zstack_reg = res[0]
     zstack_reg = zstack
-        
-    rois, npils = create_masks(stat, Y, X, ops)
+    
+    if (ROI_masks is None) and (neuropil_masks is None):
+        rois, npils = create_masks(stat, Y, X, ops)
         
     zProfile ,Fneu = extract_traces(zstack_reg, rois, npils,1)
     
