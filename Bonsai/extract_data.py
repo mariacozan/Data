@@ -25,6 +25,8 @@ def GetNidaqChannels(niDaqFilePath, numChannels = 5, plot = False):
     -------
     niDaq : matrix
         the matrix of the niDaq signals [time X channels]
+    nidaqTime: array [s]
+        The clock time of each nidaq timepoint
 
     """
     niDaq = np.fromfile(niDaqFilePath, dtype= np.float64)
@@ -34,8 +36,8 @@ def GetNidaqChannels(niDaqFilePath, numChannels = 5, plot = False):
         f,ax = plt.subplots(numChannels,sharex=True)
         for i in range(numChannels):
             ax[i].plot(niDaq[:,i])
-            
-    return niDaq
+    nidaqTime = np.arange(niDaq.shape[0])/1000        
+    return niDaq, nidaqTime
 
 def AssignFrameTime(frameClock,th = 0.5,plot=False,fs = 1000):
     """
@@ -212,9 +214,10 @@ def GetSparseNoise(filePath, size=(20,25)):
     returns: an array of size [frames X size[0] X size[1]]
     """
     sparse = np.fromfile(filePath, dtype= np.dtype('b'))
-    sparse = np.reshape(sparse,(int(len(sparse)/(size[0]*size[1])),size[0],size[1]))
+    sparse = np.reshape(sparse,(int(len(sparse)/(size[0]*size[1])),size[1],size[0]))
+    # sparse = np.reshape(sparse,(int(len(sparse)/(size[0]*size[1])),size[0],size[1]))
     # sparse = np.reshape(sparse,(size[0],size[1],int(len(sparse)/(size[0]*size[1]))))
-    return sparse
+    return np.moveaxis(np.flip(sparse,2),-1,1)
 
 def GetLogEntry(filePath,entryString):
     """
@@ -307,7 +310,7 @@ def GetArduinoData(arduinoFilePath,th = 3,plot=False):
         all the channels recorded by the arduino.
 
     '''
-    csvChannels = np.genfromtxt(arduinoFilePath,delimiter=',')
+    csvChannels = np.loadtxt(arduinoFilePath,delimiter=',')
     
     
     arduinoTime = csvChannels[:,-1]
@@ -375,22 +378,31 @@ def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
     
     mses = []
     mse_prev = 10**4
-    a = 0
-    b = 0
-    for i in range(len(niChangeTime)):
+    a_list = []
+    b_list = []
+    # a = []
+    # b = []
+    for i in range(len(niChangeTime)-len(ardChangeTime)):
         x = ardChangeTime
-        y = niChangeTime[i:min(i+len(ardChangeTime),len(niChangeTime))]
+        y = niChangeTime[i:i+len(ardChangeTime)]
+        y = y-y[0]
         lenDif = len(x)-len(y)
         if (lenDif>0):
             x = x[:-lenDif]
         a_,b_,mse = _linearAnalyticalSolution(x,y)
         mses.append(mse)
-        if (mse>=mse_prev):
-            break;
-        mse_prev = mse
-        a = a_
-        b = b_
-        
+        a_list.append(a_)
+        b_list.append(a_)
+        # b.append(b_)
+        # if (mse>=mse_prev):
+        #     break;
+    
+    bestTime = np.argmin(mses)
+    a,b,mse = _linearAnalyticalSolution(ardChangeTime,niChangeTime[bestTime:bestTime+len(ardChangeTime)])
+    
+    # minInd = np.nanargmin(mses)  
+    # a = a[minInd]
+    # b = b[minInd]
     # lags = np.arange(-len(niChangeDuration_norm) + 1, len(ardChangeDuration_norm))
     # corr = np.correlate(niChangeDuration,ardChangeDuration,mode='full')
     
@@ -408,7 +420,8 @@ def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
     return newArdTimes
     
     
-    
+def adjustPiezoTrace():
+    None    
     
     
     

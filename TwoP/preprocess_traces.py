@@ -68,10 +68,10 @@ def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, 
         N_ind = np.floor((iN - N_prct[0]) / binSize)
 
         # for each neuropil bin, find the matching (low percentile) value from F trace
-        for iN in range(numN):
+        for Ni in range(numN):
             tmp = np.ones_like(iF) * np.nan
-            tmp[N_ind == iN] = iF[N_ind == iN]
-            F_binValues[iN, iROI] = np.nanpercentile(tmp, prctl_F, 0)
+            tmp[N_ind == Ni] = iF[N_ind == Ni]
+            F_binValues[Ni, iROI] = np.nanpercentile(tmp, prctl_F, 0)
         
         
         #Fit only non-nan values
@@ -117,9 +117,12 @@ def correct_zmotion(F, zprofiles, ztrace):
     """
     
     # Step 1 - Consider smoothing instead of a Moffat function. Considering how our stacks look
-    zprofiles_smoothed = sp.signal.savgol_filter(zprofiles,20,5,axis=0)
+    
+    w = np.hamming(3)
+    w/=np.sum(w)
+    zprofiles_smoothed = sp.signal.savgol_filter(zprofiles,3,2,axis=0)
     # find correction factor
-    referenceDepth = np.round(np.median(ztrace))
+    referenceDepth = int(np.round(np.median(ztrace)))
     correctionFactor = zprofiles_smoothed/zprofiles_smoothed[referenceDepth,:]
     
     # Step 2 - If taking the raw data from ops need to get the correct frame ...
@@ -136,12 +139,13 @@ def register_zaxis():
 
 
 # TODO
-def get_F0():
-    None
+def get_F0(Fc,prctl_F=5, verbose=True):
+    F0 = np.nanpercentile(Fc, prctl_F, 0)
+    return F0
 
 # TODO
-def get_delta_F_over_F():
-    None
+def get_delta_F_over_F(Fc,F0):
+    return (F-F0)/F0
 
 def _linear(x, a, b):
     return a + b * x
