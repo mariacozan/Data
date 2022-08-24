@@ -68,6 +68,9 @@ def _fill_plane_piezo(stack,piezoNorm,i,spacing=1):
         # If beyond the depth take the final frame        
         if (depth>planes-1):
             depth = planes-1
+        # If below the topmost frame take the first one
+        if (depth<0):
+            depth = 0
         for yt in np.arange(currPixelY,endPointY):            
             # print (depth,yt)
             line = interp((depth,yt,np.arange(0,resolutionx)))       
@@ -106,7 +109,7 @@ def register_zstack_frames(zstack):
     return zstack
 
 def registerStacktoRef(zstack,refImg,ops):
-    ref =  rigid.phasecorr_reference(ops['refImg'],ops['smooth_sigma'])
+    ref =  rigid.phasecorr_reference(refImg,ops['smooth_sigma'])
     data = rigid.apply_masks(
         zstack.astype(np.int16),
         *rigid.compute_masks(
