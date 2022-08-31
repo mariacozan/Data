@@ -108,7 +108,7 @@ def register_zstack_frames(zstack):
     zstack = _register_swipe(zstack,centreFrame,zstack.shape[0],1)
     return zstack
 
-def registerStacktoRef(zstack,refImg,ops):
+def registerStacktoRef(zstack,refImg,ops = default_ops()):
     ref =  rigid.phasecorr_reference(refImg,ops['smooth_sigma'])
     data = rigid.apply_masks(
         zstack.astype(np.int16),
@@ -129,7 +129,7 @@ def registerStacktoRef(zstack,refImg,ops):
             
 # TODO. Also: return new planes following a certain angle through the z-stack. New plane should follow movement trace of
 # piezo.
-def register_zstack(tiff_path, spacing = 1, piezo=None, save = True):
+def register_zstack(tiff_path, spacing = 1, piezo=None, target_image = None):
     """
     Loads tiff file containing imaged z-stack, aligns all frames to each other, averages across repetitions, and (if
     piezo not None) reslices the 3D z-stack so that slant/orientation of the new slices matches the slant of the frames
@@ -143,7 +143,10 @@ def register_zstack(tiff_path, spacing = 1, piezo=None, save = True):
         Movement of piezo across z-axis for one plane. Unit: microns. Raw taken from niDaq
     [Note: need to add more input arguments depending on how registration works. Piezo movement might need to provided
     in units of z-stack slices if tiff header does not contain information about depth in microns]
-    spacing: distance between planes (in microns)    
+    spacing: distance between planes (in microns)  
+    target_image : np.array [x x y]
+        Image used by suite2p to align frames to. Is needed to align z-stack to this image and then apply masks at
+        correct positions.
     
     Returns
     -------
@@ -181,15 +184,18 @@ def register_zstack(tiff_path, spacing = 1, piezo=None, save = True):
         zstack = zstackTmp
     
        
-    if (save):
-        savePath = os.path.splitext(tiff_path)[0]+'_angled'
-        svTmp = savePath
-        i = 0
-        while (os.path.exists(savePath+'.tif')):            
-            savePath = svTmp+str(i)
-            i+=1    
-        savePath += '.tif'
-        io.imsave(savePath, zstack)
+    # if (save):
+    #     savePath = os.path.splitext(tiff_path)[0]+'_angled'
+    #     svTmp = savePath
+    #     i = 0
+    #     while (os.path.exists(savePath+'.tif')):            
+    #         savePath = svTmp+str(i)
+    #         i+=1    
+    #     savePath += '.tif'
+    #     io.imsave(savePath, zstack)
+    
+    if (not(target_image is None)):
+        zstack = registerStacktoRef(zstack,refImg,ops)  
     
     return zstack
 
@@ -201,7 +207,7 @@ def _gauss(x, A,mu,sigma):
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
 # TODO
 
-def extract_zprofiles(extraction_path, zstack, target_image = None, neuropil_correction = None, ROI_masks = None, neuropil_masks = None, smootingFactor = 2):
+def extract_zprofiles(extraction_path, zstack, neuropil_correction = None, ROI_masks = None, neuropil_masks = None, smootingFactor = 2, metadata = {}):
     """
     Extracts fluorescence of ROIs across depth of z-stack.
 
@@ -245,6 +251,7 @@ def extract_zprofiles(extraction_path, zstack, target_image = None, neuropil_cor
     
     stat = np.load(os.path.join(extraction_path,'stat.npy'),allow_pickle=True)
     ops = np.load(os.path.join(extraction_path,'ops.npy'),allow_pickle=True).item()
+    isCell = np.load(os.path.join(directory,'iscell.npy')).astype(bool)
     
     ### Step 1
     # 
@@ -262,19 +269,23 @@ def extract_zprofiles(extraction_path, zstack, target_image = None, neuropil_cor
     if (ROI_masks is None) and (neuropil_masks is None):
         rois, npils = create_masks(stat, Y, X, ops)
         
-    zProfile ,Fneu = extract_traces(zstack_reg, rois, npils,1)    
+    zProfile ,Fneu = extract_traces(zstack_reg, rois, npils,1) 
+    zProfile = zProfile[isCell[:,0],:].T
+    Fneu = Fneu[isCell[:,0],:].T
        
     zprofileRaw = zProfile.T.copy()
     # Perform neuropil correction    
     if (not (neuropil_correction is None)):
         Fbl = np.min(F,0)
-        zProfile = zProfile - neuropil_correction.reshape(-1,1) * Fneu
+        zProfile = zProfile - neuropil_correction.reshape(1,-1) * Fneu
         # zProfile = np.fmax(zProfile,np.ones(zProfile.shape)*Fbl.reshape(-1,1))
-        zProfile = zProfile.T
+        # zProfile = zProfile.T
     # zProfileC = np.zeros(zProfile.shape)
     
     depths = np.arange(-(zstack.shape[0]-1)/2,(zstack.shape[0]-1)/2+1)
-    
+    metadata['zprofile_raw'] = zprofileRaw
+    metadata['zprofile_neuropil'] = Fneu.T
+    metadata['zstack_registered'] = zstack_reg
                                     
-    return zprofileRaw, zProfile ,Fneu.T
+    return zProfile
     

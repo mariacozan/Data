@@ -11,44 +11,48 @@ from matplotlib import pyplot as plt
 import scipy as sp
 
 
-directory = 'D:\\Suite2Pprocessedfiles\\Hedes\\2022-03-23\\suite2p\\plane1\\'
-
-F = np.load(os.path.join(directory,'F.npy')).T
+# directory = 'D:\\Suite2Pprocessedfiles\\Hedes\\2022-03-23\\suite2p\\plane1\\'
+directory = 'D:\\Suite2Pprocessedfiles\\SS113\\2022-07-11\\suite2p\\plane1\\'
+frequency = 58
+#%% Load suite2p outputs
+F = np.load(os.path.join(directory,'F.npy'), allow_pickle=True).T
 N = np.load(os.path.join(directory,'Fneu.npy')).T
-F_corr, regPars, F_binValues, N_binValues = correct_neuropil(F,N)
-#%% Z Stack creation
-zdir = 'Z:\\RawData\\Hedes\\2022-03-23\\3\\file_00003_00001.tif'
-piezoDir = 'Z:\\RawData\\Hedes\\2022-03-23\\1\\'
-nidaq,nt = GetNidaqChannels(piezoDir + 'NiDaqInput0.bin',4,plot=False)
-
-# piezo =  sp.signal.medfilt(piezo,41)
-
-frameclock = nidaq[:,1]
-
-frames = AssignFrameTime(frameclock,plot=False)
-#%% Get correct Piezo
-plane = 1
-piezo = nidaq[:,-1].copy()
-w = np.hanning(10)
-w/=np.sum(w)
-piezo =  np.convolve(piezo,w,'same')
-plane0ind = np.where((nt>=frames[5+plane]) & (nt<frames[5+plane+1]))
-# plane0piezo = sp.signal.medfilt(piezo[plane0ind],21) 
-piezo-=np.min(piezo)
-piezo/=np.nanmax(piezo)
-piezo*=45
-plane0piezo = piezo[plane0ind]
-#%%
-zstack = register_zstack(zdir, spacing = 1, piezo=plane0piezo, save = True)
-#%%
-zstack = io.imread('Z:\\RawData\\Hedes\\2022-03-23\\3\\file_00003_00001_angled0.tif')
-#%%
-zprofilesC, zprofiles, neuropil = extract_zprofiles(directory, zstack,neuropil_correction =regPars[1,:] )
-#%%
+isCell = np.load(os.path.join(directory,'iscell.npy')).T
+stat = np.load(os.path.join(directory,'stat.npy'),allow_pickle=True)
 ops = np.load(os.path.join(directory,'ops.npy'),allow_pickle=True).item()
-zTrace = np.argmax(ops['zcorr'],0)
+processing_metadata = {}
+
+fs = ops['fs']
+F = F[:,isCell[0,:].astype(bool)]
+N = N[:,isCell[0,:].astype(bool)]
+Fc, regPars, F_binValues, N_binValues = correct_neuropil(F,N)
+F0  = get_F0(F_corr,fs)
+dF = get_delta_F_over_F(Fc,F0)
+#TODO: save 
+
+#%% get Piezo Trace
+# zdir = 'Z:\\RawData\\Hedes\\2022-03-23\\3\\file_00003_00001.tif'
+# piezoDir = 'Z:\\RawData\\Hedes\\2022-03-23\\1\\'
+zdir = 'Z:\\RawData\\SS113\\2022-07-11\\4\\file_00001_00001.tif'
+piezoDir = 'Z:\\RawData\\SS113\\2022-07-11\\1\\'
+nidaq,nt = GetNidaqChannels(piezoDir + 'NiDaqInput0.bin',5,plot=False)
+frameclock = nidaq[:,1]
+frames = AssignFrameTime(frameclock,plot=False)
+piezo = nidaq[:,-2].copy()
+planePiezo = get_piezo_trace_for_plane(piezo,plane = 1,maxDepth = 10)
+
+#%% Xreate the z-stack with a piezo angle
+zstack = register_zstack(zdir, spacing = 1, piezo = planePiezo, target_image = refImg)
+#TODO : save z-stack
 #%%
-F_zcorrected = correct_zmotion(F_corr, zprofilesC, zTrace)
+zstack = io.imread('Z:\\RawData\\SS113\\2022-07-11\\4\\file_00001_00001_angled.tif')
+#%% Retrieve z-profiles and retrieve corrected F
+refImg = ops['refImg'][1]
+zprofiles = extract_zprofiles(directory,zstack,neuropil_correction =regPars[1,:] ,metadata = processing_metadata)
+zTrace = np.argmax(ops['zcorr'],0)
+Fcz = correct_zmotion(dF, zprofiles, zTrace)
+
+#TODO: save registered z-stack
 #%%
 n = 10
 f,ax = plt.subplots(2,1,sharex=True)
@@ -66,7 +70,7 @@ plt.plot(N[:,n],'b')
 plt.close('all')
 stat = np.load(os.path.join(directory,'stat.npy'),allow_pickle=True)
 ops = np.load(os.path.join(directory,'ops.npy'),allow_pickle=True).item()
-refImg = ops['refImg']
+refImg = ops['refImg'][0]
 n = 4
 
 
@@ -88,25 +92,26 @@ for n in range(zprofiles.shape[1]):
     # plt.vlines([np.min(zTrace),np.max(zTrace)],np.min(zprofiles[:,n])-100,np.max(zprofiles[:,n])+100,'r')
     plt.vlines([np.nanpercentile(zTrace,2.5),np.nanpercentile(zTrace,97.5)],np.min(zprofiles[:,n])-100,np.max(zprofiles[:,n])+100,'r')
     plt.ylim(np.min(zprofiles[:,n]),np.max(zprofiles[:,n]))
-    plt.savefig('D:\\Suite2Pprocessedfiles\\Hedes\\2022-03-23\\zprofiles1\\neuron'+str(n)+'_corrected.png')
+    plt.savefig(directory+'Zprofiles\\neuron'+str(n)+'_corrected.png')
     plt.close('all')
     plt.figure()
     plt.plot(zprofilesC[:,n],'k')
     plt.plot(neuropil[:,n],'b')
     # plt.vlines([np.min(zTrace),np.max(zTrace)],np.min(zprofilesC[:,n])-100,np.max(zprofilesC[:,n])+100,'r')
     plt.vlines([np.nanpercentile(zTrace,2.5),np.nanpercentile(zTrace,97.5)],np.min(zprofilesC[:,n])-100,np.max(zprofilesC[:,n])+100,'r')
-    plt.savefig('D:\\Suite2Pprocessedfiles\\Hedes\\2022-03-23\\zprofiles1\\neuron'+str(n)+'_raw.png')
+    plt.savefig(directory+'Zprofiles\\neuron'+str(n)+'_raw.png')
     plt.close('all')
 
 #%% Hunt for the ROI
 plt.close('all')
 stat = np.load(os.path.join(directory,'stat.npy'),allow_pickle=True)
+stat = stat[isCell[0,:].astype(bool)]
 ops = np.load(os.path.join(directory,'ops.npy'),allow_pickle=True).item()
-refImg = ops['refImg']
+refImg = ops['refImg'][1]
 
 
 
-n =1
+n =0 
 im = np.zeros((ops['Ly'], ops['Lx']))
 # im = refImg
 ypix = stat[n]['ypix'][~stat[n]['overlap']]
@@ -117,7 +122,7 @@ im[ypix,xpix] = 1
 plt.figure()
 r = refImg.copy()
 r[im.astype(bool)] = -10000
-plt.imshow(r)
+plt.imshow(im,cmap = 'bone')
 
 #%% Fitting Tryouts
 plt.close('all')

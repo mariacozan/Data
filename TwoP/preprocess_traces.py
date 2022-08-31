@@ -140,7 +140,7 @@ def register_zaxis():
 
 # TODO
 def get_F0(Fc,fs,prctl_F=5, window_size = 60, verbose=True):
-    window_size = fs*window_size
+    window_size = int(round(fs*window_size))
     F0 = np.zeros_like(Fc)
     for t in range(0,Fc.shape[0],window_size):
         F0t = np.nanpercentile(Fc[t:t+window_size,:], prctl_F, 0)
@@ -148,8 +148,8 @@ def get_F0(Fc,fs,prctl_F=5, window_size = 60, verbose=True):
     return F0
 
 # TODO
-def get_delta_F_over_F(Fc,F0):
-    return (F-F0)/F0
+def get_delta_F_over_F(Fc,F0):        
+    return (Fc-F0)/np.fmax(1,np.nanmean(-F0,0))
 
 def _linear(x, a, b):
     return a + b * x
