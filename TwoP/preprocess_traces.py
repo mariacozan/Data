@@ -1,9 +1,38 @@
 """Pre-process calcium traces extracted from tiff files."""
 import numpy as np
 from scipy import optimize
+from general import linearAnalyticalSolution
 
 
-def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, prctl_F=5, verbose=True):
+def GetCalciumAligned(signal, time, eventTimes, window, planes, delays):
+    aligned = []
+    run = 0
+    ps = np.unique(planes).astype(int)
+    for p in range(len(ps)):
+        aligned_tmp, t = AlignStim(
+            signal[:, np.where(planes == ps[p])[0]],
+            time + delays[0, ps[p]],
+            eventTimes,
+            window,
+        )
+        if run == 0:
+            aligned = aligned_tmp
+            run += 1
+        else:
+            aligned = np.concatenate((aligned, aligned_tmp), axis=2)
+    return np.array(aligned), t
+
+
+def correct_neuropil(
+    F: np.ndarray,
+    N: np.ndarray,
+    fs,
+    numN=20,
+    minNp=10,
+    maxNp=90,
+    prctl_F=5,
+    verbose=True,
+):
     """
     Estimates the correction factor r for neuropil correction, so that:
         C = S - rN
@@ -50,18 +79,24 @@ def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, 
 
     # TODO: set verbose options
 
+    F0 = get_F0(F, fs)
+    N0 = get_F0(N, fs)
+    Fc = F - F0
+    Nc = N - N0
+
+    lowActivity = np.nanpercentile(F, 50, 0)
     for iROI in range(nROIs):
         # TODO: verbose options
 
-        iN = N[:, iROI]
-        iF = F[:, iROI]
+        iN = Nc[:, iROI]
+        iF = Fc[:, iROI]
 
         # get low and high percentile of neuropil trace
         N_prct = np.nanpercentile(iN, np.array([minNp, maxNp]), axis=0)
         # divide neuropil values into numN groups
         binSize = (N_prct[1] - N_prct[0]) / numN
         # get neuropil values regularly spaced across range between minNp and maxNp
-        N_binValues[:, iROI] = N_prct[0] + (np.arange(0,stop=numN) + 1) * binSize
+        N_binValues[:, iROI] = N_prct[0] + (np.arange(0, stop=numN)) * binSize
 
         # discretize values of neuropil between minN and maxN, with numN elements
         # N_ind contains values: 0...binSize for N values within minNp and maxNp
@@ -72,24 +107,36 @@ def correct_neuropil(F: np.ndarray, N: np.ndarray, numN=20, minNp=10, maxNp=90, 
             tmp = np.ones_like(iF) * np.nan
             tmp[N_ind == Ni] = iF[N_ind == Ni]
             F_binValues[Ni, iROI] = np.nanpercentile(tmp, prctl_F, 0)
-        
-        
-        #Fit only non-nan values
-        noNan = np.where(~np.isnan(F_binValues[:, iROI]) & ~np.isnan(N_binValues[:, iROI] ))[0]
-        
-        
-        # perform linear regression between neuropil and signal bins under constraint that 0<slope<2
-        res, _ = optimize.curve_fit(_linear, N_binValues[noNan, iROI], F_binValues[noNan, iROI],
-                                    p0=(np.nanmean(F_binValues[:, iROI]), 0), bounds=([-np.inf, 0], [np.inf, 2]))
-        regPars[:, iROI] = res
-        # determine neuropil correct signal
-        signal[:, iROI] = iF - res[1] * iN
+        # Fit only non-nan values
+        noNan = np.where(
+            ~np.isnan(F_binValues[:, iROI]) & ~np.isnan(N_binValues[:, iROI])
+        )[0]
 
+        # perform linear regression between neuropil and signal bins under constraint that 0<slope<2
+        # res, _ = optimize.curve_fit(_linear, N_binValues[noNan, iROI], F_binValues[noNan, iROI],
+        #                             p0=(np.nanmean(F_binValues[:, iROI]), 0), bounds=([-np.inf, 0], [np.inf, 2]))
+        # find analytical solution
+        a, b, mse = linearAnalyticalSolution(
+            N_binValues[noNan, iROI], F_binValues[noNan, iROI], False
+        )
+        # regPars[:, iROI] = res
+        regPars[:, iROI] = (a, b)
+
+        ## avoid over correction
+        # b = min(b, 1)
+        corrected_sig = iF - b * iN
+
+        overCInd = np.where(corrected_sig < 0)[0]
+        corrected_sig[overCInd] = np.nanpercentile(
+            corrected_sig[corrected_sig >= 0], prctl_F
+        )
+        # determine neuropil correct signal
+        signal[:, iROI] = corrected_sig
     return signal, regPars, F_binValues, N_binValues
 
 
 # TODO
-def correct_zmotion(F, zprofiles, ztrace):
+def correct_zmotion(F, zprofiles, ztrace, ignore_faults=True, metadata={}):
     """
     Corrects changes in fluorescence due to brain movement along z-axis (depth). Method is based on algorithm
     described in Ryan, ..., Lagnado (J Physiol, 2020)
@@ -115,21 +162,23 @@ def correct_zmotion(F, zprofiles, ztrace):
     2) Create correction vector based on z-profiles and ztrace.
     3) Correct calcium traces using correction vector.
     """
-    
+
     # Step 1 - Consider smoothing instead of a Moffat function. Considering how our stacks look
-    
-    w = np.hamming(3)
-    w/=np.sum(w)
-    zprofiles_smoothed = sp.signal.savgol_filter(zprofiles,3,2,axis=0)
+
     # find correction factor
+
     referenceDepth = int(np.round(np.median(ztrace)))
-    correctionFactor = zprofiles_smoothed/zprofiles_smoothed[referenceDepth,:]
-    
+    # zprofiles = zprofiles - np.min(zprofiles, 0)
+    correctionFactor = zprofiles / zprofiles[referenceDepth, :]
+
     # Step 2 - If taking the raw data from ops need to get the correct frame ...
-    # by taking the max correlation for each time point   
-    correctionMatrix = correctionFactor[ztrace,:]
-    # Step 3 - Correct   
+    # by taking the max correlation for each time point
+    correctionMatrix = correctionFactor[ztrace, :]
+    # Step 3 - Correct
     signal = F / correctionMatrix
+
+    if ignore_faults:
+        signal = remove_zcorrected_faults(ztrace, correctionFactor, signal, metadata)
     return signal
 
 
@@ -139,17 +188,92 @@ def register_zaxis():
 
 
 # TODO
-def get_F0(Fc,fs,prctl_F=5, window_size = 60, verbose=True):
-    window_size = int(round(fs*window_size))
+def get_F0(Fc, fs, prctl_F=8, window_size=60, verbose=True):
+    window_size = int(round(fs * window_size))
     F0 = np.zeros_like(Fc)
-    for t in range(0,Fc.shape[0],window_size):
-        F0t = np.nanpercentile(Fc[t:t+window_size,:], prctl_F, 0)
-        F0[t:t+window_size,:] = np.tile(F0t,(Fc[t:t+window_size,:].shape[0],1))
+    Fc_pd = pd.DataFrame(Fc)
+    F0 = np.array(
+        Fc_pd.rolling(window_size).quantile(prctl_F * 0.01, interpolation="midpoint")
+    )
+    # for t in range(0, Fc.shape[0]):
+    #     rng = np.arange(t, np.min([len(Fc), t + window_size]))
+    #     F0t = np.nanpercentile(Fc[rng, :], prctl_F, 0)
+    #     # F0[t, :] = np.tile(
+    #     #     F0t, (Fc[rng, :].shape[0], 1)
+    #     F0[t, :] = F0t
     return F0
 
+
 # TODO
-def get_delta_F_over_F(Fc,F0):        
-    return (Fc-F0)/np.fmax(1,np.nanmean(-F0,0))
+def get_delta_F_over_F(Fc, F0):
+    return (Fc - F0) / np.fmax(1, np.nanmean(abs(F0), 0))
+
+
+def remove_zcorrected_faults(ztrace, zprofiles, signals, metadata={}):
+    """
+    This functions cleans timepoints in the trace where the imaging takes place
+    in a plane that is meaningless as to cell activity.
+    This is defined as times when there are two peaks or slopes in the imaging
+    region and the imaging plane is in the second slop.
+
+    Parameters
+    ----------
+    ztrace : TYPE
+        the imaging plane on the z-axis
+    zprofiles : TYPE
+        the z-profiles of all the cells.
+    signals : TYPE
+        the signal traces.
+
+    Returns
+    -------
+    signals: the corrected sigals with the faulty timepoints removed.
+
+    """
+
+    zp_focused = zprofiles[min(ztrace) : max(ztrace), :]
+    ztrace -= min(ztrace)
+    dif = np.diff(zp_focused, 1, axis=0)
+    zero_crossings_inds = np.where(np.diff(np.signbit(dif), axis=0))
+    zero_crossing = zero_crossings_inds[0]
+    cells = zero_crossings_inds[1]
+    imagingPlane = np.median(ztrace)  # -min(ztrace)
+    metadata["removedIndex"] = []
+    for i in range(signals.shape[1]):
+        cellInds = np.where(cells == i)[0]
+        # no zero crossings of the derivative means imaging is on a monotonous slope
+        if len(cellInds) == 0:
+            continue
+        zc = zero_crossing[cellInds]
+        distFromPlane = imagingPlane - zc
+        planeCrossingInd = np.argmin(abs(distFromPlane))
+        planeCrossing = zc[planeCrossingInd]
+        # if there are many crossings, find out what is the closest one to
+        # the normal plane
+        if len(zc) > 1:
+
+            # the imaging plane has the first peak/trough - discardanythin that comes after the rest
+            if planeCrossingInd == 0:
+                signals[np.where(ztrace > zc[1]), i] = np.nan
+            else:
+                signals[np.where(ztrace < zc[planeCrossingInd - 1]), i] = np.nan
+        # Check if differential is positive before crossing
+        # If that's the case we're golden, the problem is if negative
+        # Then it's a trough and if depends on what side of the trough we are
+        # imaging
+        if dif[planeCrossingInd, i] < 0:
+            if distFromPlane[planeCrossingInd] < 0:
+                removeInd = np.where(ztrace > planeCrossing + 1)[0]
+            else:
+                removeInd = np.where(ztrace < planeCrossing + 1)[0]
+            signals[removeInd, i] = np.nan
+        metadata["removedIndex"].append(np.where(np.isnan(signals))[0])
+    return signals
+
 
 def _linear(x, a, b):
     return a + b * x
+
+
+def zero_signal(F):
+    return F + 19520

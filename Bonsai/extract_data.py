@@ -1,3 +1,15 @@
+import numpy as np
+from matplotlib import pyplot as plt
+import csv
+import glob
+import re
+from numba import jit, cuda
+import numba
+
+from sklearn import linear_model
+from sklearn.metrics import mean_squared_error
+
+
 """Pre-process data recorded with Bonsai."""
 # -*- coding: utf-8 -*-
 """
@@ -6,11 +18,8 @@ Created on Wed Apr 13 09:26:53 2022
 @author: Liad J. Baruchin
 """
 
-import numpy as np
-from matplotlib import pyplot as plt
-import csv
 
-def GetNidaqChannels(niDaqFilePath, numChannels = 5, plot = False):
+def GetNidaqChannels(niDaqFilePath, numChannels=None, plot=False):
     """
     Get the nidaq channels
 
@@ -19,7 +28,7 @@ def GetNidaqChannels(niDaqFilePath, numChannels = 5, plot = False):
     niDaqFilePath : string
         the path of the nidaq file.
     numChannels : int, optional
-        Number of channels in the file. The default is 7.
+        Number of channels in the file, if none will look for a file describing the channels. The default is None.
 
     Returns
     -------
@@ -29,28 +38,48 @@ def GetNidaqChannels(niDaqFilePath, numChannels = 5, plot = False):
         The clock time of each nidaq timepoint
 
     """
-    niDaq = np.fromfile(niDaqFilePath, dtype= np.float64)
-    niDaq = np.reshape(niDaq,(int(len(niDaq)/numChannels),numChannels))
-    
-    if (plot):
-        f,ax = plt.subplots(numChannels,sharex=True)
-        for i in range(numChannels):
-            ax[i].plot(niDaq[:,i])
-    nidaqTime = np.arange(niDaq.shape[0])/1000        
-    return niDaq, nidaqTime
 
-def AssignFrameTime(frameClock,th = 0.5,plot=False,fs = 1000):
+    if numChannels is None:
+        dirs = glob.glob(os.path.join(niDaqFilePath, "nidaqChannels*.csv"))
+        if len(dirs) == 0:
+            print("ERROR: no channel file and no channel number given")
+            return None
+        channels = np.loadtxt(dirs[0], delimiter=",", dtype=str)
+        numChannels = len(channels)
+    else:
+        channels = range(numChannels)
+    nidaqSignals = dict.fromkeys(channels, None)
+
+    niDaqFilePath = get_file_in_directory(niDaqFilePath, "NidaqInput")
+    niDaq = np.fromfile(niDaqFilePath, dtype=np.float64)
+    if int(len(niDaq) % numChannels) == 0:
+        niDaq = np.reshape(niDaq, (int(len(niDaq) / numChannels), numChannels))
+    else:
+        # file was somehow screwed. find the good bit of the data
+        correctDuration = int(len(niDaq) // numChannels)
+        lastGoodEntry = correctDuration * numChannels
+        niDaq = np.reshape(niDaq[:lastGoodEntry], (correctDuration, numChannels))
+    if plot:
+        f, ax = plt.subplots(numChannels, sharex=True)
+        for i in range(numChannels):
+            ax[i].plot(niDaq[:, i])
+    nidaqTime = np.arange(niDaq.shape[0]) / 1000
+
+    return niDaq, channels, nidaqTime
+
+
+def AssignFrameTime(frameClock, th=0.5, fs=1000, plot=False):
     """
     The function assigns a time in ms to a frame time.
-    
+
     Parameters:
     frameClock: the signal from the nidaq of the frame clock
-    th : the threshold for the tick peaks, default : 3, which seems to work 
+    th : the threshold for the tick peaks, default : 3, which seems to work
     plot: plot to inspect, default = False
     fs: the frame rate of acquisition default is 1000Hz
     returns frame start Times (s)
     """
-    #Frame times
+    # Frame times
     # pkTimes,_ = sp.signal.find_peaks(-frameClock,threshold=th)
     # pkTimes = np.where(frameClock<th)[0]
     # fdif = np.diff(pkTimes)
@@ -58,130 +87,137 @@ def AssignFrameTime(frameClock,th = 0.5,plot=False,fs = 1000):
     # pkTimes = np.delete(pkTimes,longFrame)
     # recordingTimes = np.arange(0,len(frameClock),0.001)
     # frameTimes = recordingTimes[pkTimes]
-    
+
     # threshold = 0.5
-    pkTimes = np.where(np.diff(frameClock > th, prepend=False))[0]    
+    pkTimes = np.where(np.diff(frameClock > th, prepend=False, axis=0))[0]
     # pkTimes = np.where(np.diff(np.array(frameClock > 0).astype(int),prepend=False)>0)[0]
-       
-    
-    if (plot):
-        f,ax = plt.subplots(1)
+
+    if plot:
+        f, ax = plt.subplots(1)
         ax.plot(frameClock)
-        ax.plot(pkTimes,np.ones(len(pkTimes))*np.min(frameClock),'r*')
-        ax.set_xlabel('time (ms)')
-        ax.set_ylabel('Amplitude (V)')
-        
-        
-    return pkTimes[::2]/fs
+        ax.plot(pkTimes, np.ones(len(pkTimes)) * np.min(frameClock), "r*")
+        ax.set_xlabel("time (ms)")
+        ax.set_ylabel("Amplitude (V)")
+    return pkTimes[::2] / fs
 
 
-def DetectPhotodiodeChanges(photodiode,plot=False,kernel = 101,upThreshold = 0.2, downThreshold = 0.4,fs=1000, waitTime=5000):
+def DetectPhotodiodeChanges(
+    photodiode,
+    plot=False,
+    kernel=10,
+    upThreshold=0.2,
+    downThreshold=0.4,
+    fs=1000,
+    waitTime=5000,
+):
     """
     The function detects photodiode changes using a 'Schmitt Trigger', that is, by
     detecting the signal going up at an earlier point than the signal going down,
     the signal is filtered and smootehd to prevent nosiy bursts distorting the detection.W
-    
-    Parameters: 
-    photodiode: the signal from the nidaq of the photodiode    
+
+    Parameters:
+    photodiode: the signal from the nidaq of the photodiode
     lowPass: the low pass signal for the photodiode signal, default: 30,
     kernel: the kernel for median filtering, default = 101.
     fs: the frequency of acquisiton, default = 1000
-    plot: plot to inspect, default = False   
+    plot: plot to inspect, default = False
     waitTime: the delay time until protocol start, default = 5000
-    
+
     returns: diode changes (s) up to the user to decide what on and off mean
-    """    
-    
+    """
+
     # b,a = sp.signal.butter(1, lowPass, btype='low', fs=fs)
-    sigFilt = photodiode
-    # sigFilt = sp.signal.filtfilt(b,a,photodiode)
-    sigFilt = sp.signal.medfilt(sigFilt,kernel)
-   
-  
+    sigFilt = photodiode.copy()
+    # sigFilt = sp.signal.filtfilt(ba,photodiode)
+    w = np.ones(kernel) / kernel
+    # sigFilt = sp.signal.medfilt(sigFilt,kernel)
+    sigFilt = np.convolve(sigFilt[:, 0], w, mode="same")
+
     maxSig = np.max(sigFilt)
     minSig = np.min(sigFilt)
-    thresholdU = (maxSig-minSig)*upThreshold
-    thresholdD = (maxSig-minSig)*downThreshold
-    threshold =  (maxSig-minSig)*0.5
-    
+    thresholdU = (maxSig - minSig) * upThreshold
+    thresholdD = (maxSig - minSig) * downThreshold
+    threshold = (maxSig - minSig) * 0.5
+
     # find thesehold crossings
-    crossingsU = np.where(np.diff(np.array(sigFilt > thresholdU).astype(int),prepend=False)>0)[0]
-    crossingsD = np.where(np.diff(np.array(sigFilt > thresholdD).astype(int),prepend=False)<0)[0]
-    crossingsU = np.delete(crossingsU,np.where(crossingsU<waitTime)[0])     
-    crossingsD = np.delete(crossingsD,np.where(crossingsD<waitTime)[0])   
-    crossings = np.sort(np.unique(np.hstack((crossingsU,crossingsD))))
-  
-    
-    if (plot):
-        f,ax = plt.subplots(1,1,sharex=True)
-        ax.plot(photodiode,label='photodiode raw')
-        ax.plot(sigFilt,label = 'photodiode filtered')        
-        ax.plot(crossings,np.ones(len(crossings))*threshold,'g*')  
-        ax.hlines([thresholdU],0,len(photodiode),'k')
-        ax.hlines([thresholdD],0,len(photodiode),'k')
-        # ax.plot(st,np.ones(len(crossingsD))*threshold,'r*')  
+    crossingsU = np.where(
+        np.diff(np.array(sigFilt > thresholdU).astype(int), prepend=False) > 0
+    )[0]
+    crossingsD = np.where(
+        np.diff(np.array(sigFilt > thresholdD).astype(int), prepend=False) < 0
+    )[0]
+    crossingsU = np.delete(crossingsU, np.where(crossingsU < waitTime)[0])
+    crossingsD = np.delete(crossingsD, np.where(crossingsD < waitTime)[0])
+    crossings = np.sort(np.unique(np.hstack((crossingsU, crossingsD))))
+
+    if plot:
+        f, ax = plt.subplots(1, 1, sharex=True)
+        ax.plot(photodiode, label="photodiode raw")
+        ax.plot(sigFilt, label="photodiode filtered")
+        ax.plot(crossings, np.ones(len(crossings)) * threshold, "g*")
+        ax.hlines([thresholdU], 0, len(photodiode), "k")
+        ax.hlines([thresholdD], 0, len(photodiode), "k")
+        # ax.plot(st,np.ones(len(crossingsD))*threshold,'r*')
         ax.legend()
-        ax.set_xlabel('time (ms)')
-        ax.set_ylabel('Amplitude (V)')    
+        ax.set_xlabel("time (ms)")
+        ax.set_ylabel("Amplitude (V)")
+    return crossings / fs
 
-    return crossings/fs
 
-def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 59.847, plot=False):
+def DetectWheelMove(
+    moveA, moveB, timestamps, rev_res=1024, total_track=59.847, plot=False
+):
     """
-    The function detects the wheel movement. 
-    At the moment uses only moveA.    
-    
-    Parameters: 
+    The function detects the wheel movement.
+    At the moment uses only moveA.
+
+    Parameters:
     moveA,moveB: the first and second channel of the rotary encoder
     rev_res: the rotary encoder resoution, default =1024
     total_track: the total length of the track, default = 59.847 (cm)
     kernel: the kernel for median filtering, default = 101.
-    
-    plot: plot to inspect, default = False   
-    
+
+    plot: plot to inspect, default = False
+
     returns: velocity[cm/s], distance [cm]
     """
-  
-    moveA = np.round(moveA).astype(bool)
-    moveB = np.round(moveB).astype(bool)
+
+    moveA = np.round(moveA / np.max(moveA)).astype(bool)
+    moveB = np.round(moveB / np.max(moveB)).astype(bool)
     counterA = np.zeros(len(moveA))
     counterB = np.zeros(len(moveB))
-    
+
     # detect A move
-    risingEdgeA = np.where(np.diff(moveA>0,prepend=True))[0]
-    risingEdgeA = risingEdgeA[moveA[risingEdgeA]==1]
+    risingEdgeA = np.where(np.diff(moveA > 0, prepend=True))[0]
+    risingEdgeA = risingEdgeA[moveA[risingEdgeA] == 1]
     risingEdgeA_B = moveB[risingEdgeA]
-    counterA[risingEdgeA[risingEdgeA_B==0]]=1
-    counterA[risingEdgeA[risingEdgeA_B==1]]=-1    
-    
+    counterA[risingEdgeA[risingEdgeA_B == 0]] = 1
+    counterA[risingEdgeA[risingEdgeA_B == 1]] = -1
 
-    
     # detect B move
-    risingEdgeB = np.where(np.diff(moveB>0,prepend=True))[0]#np.diff(moveB)
-    risingEdgeB = risingEdgeB[moveB[risingEdgeB]==1]
+    risingEdgeB = np.where(np.diff(moveB > 0, prepend=True))[0]  # np.diff(moveB)
+    risingEdgeB = risingEdgeB[moveB[risingEdgeB] == 1]
     risingEdgeB_A = moveB[risingEdgeB]
-    counterA[risingEdgeB[risingEdgeB_A==0]]=-1
-    counterA[risingEdgeB[risingEdgeB_A==1]]=1    
-    
+    counterA[risingEdgeB[risingEdgeB_A == 0]] = -1
+    counterA[risingEdgeB[risingEdgeB_A == 1]] = 1
 
+    dist_per_move = total_track / rev_res
 
-    dist_per_move = total_track/rev_res
-    
-    instDist = counterA*dist_per_move
+    instDist = counterA * dist_per_move
     distance = np.cumsum(instDist)
-    
-    averagingTime = int(np.round(1/np.median(np.diff(timestamps))))
+
+    averagingTime = int(np.round(1 / np.median(np.diff(timestamps))))
     sumKernel = np.ones(averagingTime)
     tsKernel = np.zeros(averagingTime)
-    tsKernel[0]=1
-    tsKernel[-1]=-1
-    
+    tsKernel[0] = 1
+    tsKernel[-1] = -1
+
     # take window sum and convert to cm
-    distWindow = np.convolve(instDist,sumKernel,'same')
+    distWindow = np.convolve(instDist, sumKernel, "same")
     # count time elapsed
-    timeElapsed = np.convolve(timestamps,tsKernel,'same')
-    
-    velocity = distWindow/timeElapsed
+    timeElapsed = np.convolve(timestamps, tsKernel, "same")
+
+    velocity = distWindow / timeElapsed
     # if (plot):
     #     f,ax = plt.subplots(3,1,sharex=True)
     #     ax[0].plot(moveA)
@@ -190,38 +226,52 @@ def DetectWheelMove(moveA,moveB,timestamps,rev_res = 1024, total_track = 59.847,
     #     ax[0].plot(Aet,np.ones(len(Aet)),'r*')
     #     ax[0].set_xlabel('time (ms)')
     #     ax[0].set_ylabel('Amplitude (V)')
-        
+
     #     ax[1].plot(distance)
     #     ax[1].set_xlabel('time (ms)')
     #     ax[1].set_ylabel('distance (mm)')
-        
+
     #     ax[2].plot(track)
     #     ax[2].set_xlabel('time (ms)')
     #     ax[2].set_ylabel('Move')
-    
+
     # movFirst = Amoves>Bmoves
-    
+
     return velocity, distance
-  
-def GetSparseNoise(filePath, size=(20,25)):
+
+
+def GetSparseNoise(filePath, size=None):
     """
     Pulls the sparse noise from the directory
-    
-    Parameters: 
+
+    Parameters:
     filePath: The full file path for the sparse noise file
-    size: a tuple for the size of the screen. default = (20,25)         
-    
+    size: a tuple for the size of the screen. default = (20,25)
+
     returns: an array of size [frames X size[0] X size[1]]
     """
-    sparse = np.fromfile(filePath, dtype= np.dtype('b'))
-    sparse = np.reshape(sparse,(int(len(sparse)/(size[0]*size[1])),size[1],size[0]))
-    # sparse = np.reshape(sparse,(int(len(sparse)/(size[0]*size[1])),size[0],size[1]))
-    # sparse = np.reshape(sparse,(size[0],size[1],int(len(sparse)/(size[0]*size[1]))))
-    return np.moveaxis(np.flip(sparse,2),-1,1)
+    filePath_ = get_file_in_directory(filePath, "sparse")
+    sparse = np.fromfile(filePath_, dtype=np.dtype("b")).astype(float)
 
-def GetLogEntry(filePath,entryString):
+    if size is None:
+        dirs = glob.glob(os.path.join(filePath, "props*.csv"))
+        if len(dirs) == 0:
+            print("ERROR: no channel file and no channel number given")
+            return None
+        size = np.flip(np.loadtxt(dirs[0], delimiter=",", dtype=int))
+    sparse[sparse == -128] = 0.5
+    sparse[sparse == -1] = 1
+
+    sparse = np.reshape(
+        sparse, (int(len(sparse) / (size[0] * size[1])), size[1], size[0])
+    )
+
+    return np.moveaxis(np.flip(sparse, 2), -1, 1)
+
+
+def GetLogEntry(filePath, entryString):
     """
-    
+
 
     Parameters
     ----------
@@ -235,65 +285,99 @@ def GetLogEntry(filePath,entryString):
         the list has all the extracted stimuli, each a dictionary with the props and their values.
 
     """
-    
-    
 
-    StimProperties  = []
-    
-    with open(filePath, newline='') as csvfile:
-        reader = csv.reader(csvfile, delimiter=' ', quotechar='|')
+    StimProperties = []
+
+    with open(filePath, newline="") as csvfile:
+        reader = csv.reader(csvfile, delimiter=" ", quotechar="|")
         for row in reader:
             a = []
             for p in range(len(props)):
                 # m = re.findall(props[p]+'=(\d*)', row[np.min([len(row)-1,p])])
-                m = re.findall(entryString, row[np.min([len(row)-1,p])])
-                if (len(m)>0):
-                    a.append(m[0])            
-            if (len(a)>0):
+                m = re.findall(entryString, row[np.min([len(row) - 1, p])])
+                if len(m) > 0:
+                    a.append(m[0])
+            if len(a) > 0:
                 stimProps = {}
                 for p in range(len(props)):
                     stimProps[props[p]] = a[p]
                 StimProperties.append(stimProps)
     return StimProperties
 
-def GetStimulusInfo(filePath,props):
+
+def GetStimulusInfo(filePath, props=None):
     """
-    
+
 
     Parameters
     ----------
     filePath : str
         the path of the log file.
     props : array-like
-        the names of the properties to extract. Must be exact string
+        the names of the properties to extract, if None looks for a file . default is None
 
     Returns
     -------
     StimProperties : list of dictionaries
         the list has all the extracted stimuli, each a dictionary with the props and their values.
 
-    """  
+    """
 
-    StimProperties  = []
-    
-    with open(filePath, newline='') as csvfile:
-        reader = csv.reader(csvfile, delimiter=' ', quotechar='|')
-        for row in reader:
-            a = []
-            for p in range(len(props)):
-                # m = re.findall(props[p]+'=(\d*)', row[np.min([len(row)-1,p])])
-                m = re.findall(props[p]+'=([a-zA-Z0-9_.-]*)', row[np.min([len(row)-1,p])])
-                if (len(m)>0):
-                    a.append(m[0])            
-            if (len(a)>0):
-                stimProps = {}
-                for p in range(len(props)):
-                    stimProps[props[p]] = a[p]
-                StimProperties.append(stimProps)
-    return StimProperties
+    if props is None:
+        dirs = glob.glob(os.path.join(filePath, "props*.csv"))
+        if len(dirs) == 0:
+            print("ERROR: no channel file and no channel number given")
+            return None
+        props = np.loadtxt(dirs[0], delimiter=",", dtype=str)
+    logPath = glob.glob(os.path.join(filePath, "Log*"))
+    if len(logPath) == 0:
+        return None
+    logPath = logPath[0]
 
-def GetArduinoData(arduinoFilePath,th = 3,plot=False):
-    '''
+    StimProperties = {}
+    # for p in range(len(props)):
+    #     StimProperties[props[p]] = []
+
+    searchTerm = ""
+    for p in range(len(props)):
+        searchTerm += props[p] + "=([a-zA-Z0-9_.-]*)"
+        if p < len(props) - 1:
+            searchTerm += "|"
+    with open(logPath, newline="") as csvfile:
+        allLog = csvfile.read()
+    for p in range(len(props)):
+        m = re.findall(props[p] + "=([a-zA-Z0-9_.-]*)", allLog)
+        if len(m) > 0:
+            StimProperties[props[p]] = m
+    #         # #         stimProps[props[p]] = a[p]
+    #         # #     StimProperties.append(stimProps)
+
+    # with open(logPath, newline='') as csvfile:
+    #     reader = csv.reader(csvfile, delimiter=' ', quotechar='|')
+    #     for row in reader:
+    #         # m = re.findall(props[p]+'=(\d*)', row[np.min([len(row)-1,p])])
+    #         m = re.findall(searchTerm, str(row))
+    #         if (len(m)>0):
+    #             StimProperties.append(m)
+    #         # a = []
+    #         # for p in range(len(props)):
+    #         #     # m = re.findall(props[p]+'=(\d*)', row[np.min([len(row)-1,p])])
+    #         #     m = re.findall(props[p]+'=([a-zA-Z0-9_.-]*)', row[np.min([len(row)-1,p])])
+    #         #     if (len(m)>0):
+    #         #         # a.append(m[0])
+    #         #         StimProperties[props[p]].append(m[0])
+    #         # # if (len(a)>0):
+    #         # #     stimProps = {}
+    #         # #     for p in range(len(props)):
+    #         # #         stimProps[props[p]] = a[p]
+    #         # #     StimProperties.append(stimProps)
+
+    return pd.DataFrame(StimProperties)
+
+
+# @jit(forceobj=True)
+def GetArduinoData(arduinoDirectory, plot=False):
+    """
     Retrieves the arduino data, regularises it (getting rid of small intervals)
     Always assume last entry is the timepoints
 
@@ -309,46 +393,45 @@ def GetArduinoData(arduinoFilePath,th = 3,plot=False):
     csvChannels : array-like [time X channels]
         all the channels recorded by the arduino.
 
-    '''
-    csvChannels = np.loadtxt(arduinoFilePath,delimiter=',')
-    
-    
-    arduinoTime = csvChannels[:,-1]
-    arduinoTimeDiff = np.diff(arduinoTime,prepend=True)
-    normalTimeDiff = np.where(arduinoTimeDiff>-100)[0]
-    csvChannels = csvChannels[normalTimeDiff,:]
-    # convert time to second (always in ms)
-    arduinoTime = csvChannels[:,-1]/1000 
+    """
+
+    arduinoFilePath = get_file_in_directory(arduinoDirectory, "ArduinoInput")
+    csvChannels = np.loadtxt(arduinoFilePath, delimiter=",")
+    # arduinoTime = csvChannels[:,-1]
+    arduinoTime = np.arange(csvChannels.shape[0]) / 500
+    # arduinoTimeDiff = np.diff(arduinoTime,prepend=True)
+    # normalTimeDiff = np.where(arduinoTimeDiff>-100)[0]
+    # csvChannels = csvChannels[normalTimeDiff,:]
+    # # convert time to second (always in ms)
+    # arduinoTime = csvChannels[:,-1]/1000
+
     # Start arduino time at zero
-    arduinoTime-=arduinoTime[0]
-    csvChannels = csvChannels[:,:-1]
+    arduinoTime -= arduinoTime[0]
+    csvChannels = csvChannels[:, :-1]
     numChannels = csvChannels.shape[1]
-    if (plot):
-        f,ax = plt.subplots(numChannels,sharex=True)
+    if plot:
+        f, ax = plt.subplots(numChannels, sharex=True)
         for i in range(numChannels):
-            ax[i].plot(arduinoTime,csvChannels[:,i])
-            
-    
-    return csvChannels,arduinoTime
+            ax[i].plot(arduinoTime, csvChannels[:, i])
+    dirs = glob.glob(os.path.join(arduinoDirectory, "arduinoChannels*.csv"))
+    if len(dirs) == 0:
+        channelNames = []
+    else:
+        channelNames = np.loadtxt(dirs[0], delimiter=",", dtype=str)
+    return csvChannels, channelNames, arduinoTime
 
-def _linearAnalyticalSolution(x,y):
-    n = len(x)
-    a = (np.sum(y)*np.sum(x**2)-np.sum(x)*np.sum(x*y))/(n*np.sum(x**2)-np.sum(x)**2)
-    b = (n*np.sum(x*y)-np.sum(x)*np.sum(y))/(n*np.sum(x**2)-np.sum(x)**2)
-    mse = (np.sum((y-(a+b*x))**2))/n
-    return a,b,mse
-    
 
-def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
-    '''
-    
+# @jit((numba.b1, numba.b1, numba.double, numba.double,numba.int8))
+def arduinoDelayCompensation(nidaqSync, ardSync, niTimes, ardTimes, batchSize=100):
+    """
+
 
     Parameters
     ----------
     nidaqSync : array like
         The synchronisation signal from the nidaq or any non-arduino acquisiton system.
     ardSync : array like
-        The synchronisation signal from the arduino.    
+        The synchronisation signal from the arduino.
     niTimes : array ike [s]
         the timestamps of the acqusition signal .
     ardTimes : array ike [s]
@@ -359,69 +442,167 @@ def arduinoDelayCompensation(nidaqSync,ardSync, niTimes,ardTimes):
     newArdTimes : the corrected arduino signal
         shifting the time either forward or backwards in relation to the faster acquisition.
 
-    '''
+    """
+
     niTick = np.round(nidaqSync).astype(bool)
     ardTick = np.round(ardSync).astype(bool)
-    
-    
-    
-    niChange = np.where(np.diff(niTick,prepend=True)>0)[0][10:]    
+
+    ardFreq = np.median(np.diff(ardTimes))
+
+    niChange = np.where(np.diff(niTick, prepend=True) > 0)[0][:]
+    # check that first state change is clear
+    if (niChange[0] == 0) or (niChange[1] - niChange[0] > 50):
+        niChange = niChange[1:]
     niChangeTime = niTimes[niChange]
-    niChangeDuration = np.round(np.diff(niChangeTime),4)
-    niChangeDuration_norm = (niChangeDuration-np.mean(niChangeDuration))/np.std(niChangeDuration)
-    
-    ardChange = np.where(np.diff(ardTick,prepend=True)>0)[0][10:]
+    niChangeDuration = np.round(np.diff(niChangeTime), 4)
+    niChangeDuration_norm = (niChangeDuration - np.mean(niChangeDuration)) / np.std(
+        niChangeDuration
+    )
+
+    ardChange = np.where(np.diff(ardTick, prepend=True) > 0)[0][:]
+    # check that first state change is clear
+    if ardChange[0] == 0:
+        ardChange = ardChange[1:]
     ardChangeTime = ardTimes[ardChange]
-    ardChangeDuration = np.round(np.diff(ardChangeTime),4)
-    ardChangeDuration_norm = (ardChangeDuration-np.mean(ardChangeDuration))/np.std(ardChangeDuration)   
-    
-    
+    ardChangeDuration = np.round(np.diff(ardChangeTime), 4)
+    # niChangeTime = np.append(niChangeTime,np.zeros_like(ardChangeTime))
+    ardChangeDuration_norm = (ardChangeDuration - np.mean(ardChangeDuration)) / np.std(
+        ardChangeDuration
+    )
+
+    newArdTimes = ardTimes.copy()
+    # reg = linear_model.LinearRegression()
+
     mses = []
-    mse_prev = 10**4
+    mse_prev = 10 ** 4
     a_list = []
     b_list = []
     # a = []
     # b = []
-    for i in range(len(niChangeTime)-len(ardChangeTime)):
-        x = ardChangeTime
-        y = niChangeTime[i:i+len(ardChangeTime)]
-        y = y-y[0]
-        lenDif = len(x)-len(y)
-        if (lenDif>0):
-            x = x[:-lenDif]
-        a_,b_,mse = _linearAnalyticalSolution(x,y)
-        mses.append(mse)
-        a_list.append(a_)
-        b_list.append(a_)
-        # b.append(b_)
-        # if (mse>=mse_prev):
-        #     break;
-    
-    bestTime = np.argmin(mses)
-    a,b,mse = _linearAnalyticalSolution(ardChangeTime,niChangeTime[bestTime:bestTime+len(ardChangeTime)])
-    
-    # minInd = np.nanargmin(mses)  
-    # a = a[minInd]
-    # b = b[minInd]
-    # lags = np.arange(-len(niChangeDuration_norm) + 1, len(ardChangeDuration_norm))
-    # corr = np.correlate(niChangeDuration,ardChangeDuration,mode='full')
-    
-    # timeShift = lags[np.argmax(corr)]
-    
-    # temporalShift = -np.sign(timeShift)*(niChangeTime[np.abs(timeShift)]-ardchangeTime[0])
-    
-    newArdTimes = ardTimes.copy()
-    
-    # newArdTimes+=temporalShift
-    newArdTimes = a + b*newArdTimes
-    
-    
-     
+    # passRange = min(batchSize,len(niChangeTime))#-len(ardChangeTime)
+    passRange = 100  # len(niChangeTime)
+
+    if passRange > 0:
+        for i in range(passRange):
+            # y = niChangeTime[i:]
+            # x = ardChangeTime[:len(y)]
+            y = niChangeDuration_norm[i:]
+            x = ardChangeDuration_norm[: len(y)]
+            y = y - y[0]
+            minTime = np.min([len(x), len(y)])
+            lenDif = len(x) - len(y)
+            x = x[:minTime]
+            y = y[:minTime]
+            if lenDif > 0:
+                x = x[:-lenDif]
+            a_, b_, mse = linearAnalyticalSolution(x, y)
+            mses.append(mse)
+            a_list.append(a_)
+            b_list.append(b_)
+
+            # stop when error starts to increase, to save time
+            # if (mse>=mse_prev):
+            #     break;
+            # mse_prev = mse
+        bestTime = np.argmin(mses[0:])
+        # bestTime = i-1
+
+        niChangeTime = niChangeTime[bestTime:]
+        minTime = np.min([len(niChangeTime), len(ardChangeTime)])
+        maxOverlapTime = niChangeTime[minTime - 1]
+        niChangeTime = niChangeTime[:minTime]
+        ardChangeTime = ardChangeTime[:minTime]
+        ardChangeDuration = np.round(np.diff(ardChangeTime), 4)
+        niChangeDuration = np.round(np.diff(niChangeTime), 4)
+
+        a = niChangeTime[0] - ardChangeTime[0]
+        b = np.median(niChangeDuration / ardChangeDuration)
+
+        lastPoint = 0
+        for i in range(0, len(ardChangeTime) + 1, 100):
+            x = ardChangeTime[i : np.min([len(ardChangeTime), i + batchSize])]
+            y = niChangeTime[i : np.min([len(ardChangeTime), i + batchSize])]
+
+            a, b, mse = linearAnalyticalSolution(x, y)
+
+            ind = np.where((newArdTimes >= lastPoint))[0]
+            newArdTimes[ind] = b * newArdTimes[ind] + a
+
+            ardChangeTime = ardChangeTime * b + a
+
+            lastPoint = (
+                ardChangeTime[np.min([len(ardChangeTime) - 1, i + batchSize])] + 0.00001
+            )
     return newArdTimes
-    
-    
+
+
+def get_piezo_trace_for_plane(
+    piezo,
+    frameTimes,
+    piezoTime,
+    imagingPlanes,
+    selectedPlanes=None,
+    vRatio=5 / 400,
+    winSize=20,
+    batchFactor=100,
+):
+
+    if selectedPlanes is None:
+        selectedPlanes = range(imagingPlanes)
+    else:
+        selectedPlanes = np.atleast_1d(selectedPlanes)
+    w = np.hanning(winSize)
+    w /= np.sum(w)
+    piezo = np.convolve(piezo, w, "same")
+
+    piezo -= np.min(piezo)
+    piezo /= vRatio
+    traceDuration = int(np.median(np.diff(frameTimes)) * 1000)  # convert to ms
+    planePiezo = np.zeros((traceDuration, len(selectedPlanes)))
+
+    for i in range(len(selectedPlanes)):
+        plane = selectedPlanes[i]
+
+        # Take an average of piezo trace for plane, by sampling every 100th frame
+        piezoStarts = frameTimes[imagingPlanes + plane :: imagingPlanes]
+        piezoEnds = frameTimes[imagingPlanes + plane + 1 :: imagingPlanes]
+
+        piezoBatchRange = range(0, len(piezoStarts), batchFactor)
+        avgTrace = np.zeros((traceDuration, len(piezoBatchRange)))
+        for avgInd, pi in enumerate(piezoBatchRange):
+            inds = np.where(
+                (piezoTime >= piezoStarts[pi]) & (piezoTime < piezoEnds[pi])
+            )
+            avgTrace[:, avgInd] = piezo[inds][: len(avgTrace[:, avgInd])]
+        avgTrace = np.nanmean(avgTrace, 1)
+        planePiezo[:, i] = avgTrace
+    return planePiezo
+
+
 def adjustPiezoTrace():
-    None    
-    
-    
-    
+    None
+
+
+def get_file_in_directory(directory, simpleName):
+    file = glob.glob(os.path.join(directory, simpleName + "*"), recursive=True)
+    if len(file) > 0:
+        return file[0]
+    else:
+        return None
+
+
+def get_piezo_data(ops):
+    piezoDir = ops["data_path"][0]
+    nplanes = ops["nplanes"]
+    nidaq, channels, nt = GetNidaqChannels(piezoDir, plot=False)
+    frameclock = nidaq[:, channels == "frameclock"]
+    frames = AssignFrameTime(frameclock, plot=False)
+    piezo = nidaq[:, channels == "piezo"].copy()[:, 0]
+    planePiezo = get_piezo_trace_for_plane(piezo, frames, nt, imagingPlanes=nplanes)
+    return planePiezo
+
+
+def get_ops_file(suite2pDir):
+    combinedDir = glob.glob(os.path.join(suite2pDir, "combined*"))
+    ops = np.load(os.path.join(combinedDir[0], "ops.npy"), allow_pickle=True).item()
+    return ops

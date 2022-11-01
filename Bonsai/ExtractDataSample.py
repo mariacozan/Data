@@ -19,46 +19,65 @@ import os
 import glob
 import pickle
 
-directory = 'Z:\\RawData\\SS113\\2022-07-11\\2\\'
-# directory = 'Z:\\RawData\\Hedes\\2022-07-19\\1\\'
+metadataDirectory = 'Z:\\RawData\\SS113\\2022-07-11\\1\\'
+# metadataDirectory = 'Z:\\RawData\\Hedes\\2022-07-19\\1\\'
+saveDirectory = os.path.join(metadataDirectory,'PreprocessedFiles')
 
-nidaq,nidaqt = GetNidaqChannels(directory + 'NiDaqInput0.bin',5,plot=True)
+if not os.path.isdir(saveDirectory):
+    os.makedirs(saveDirectory)
 
+nidaq,nidaqt = GetNidaqChannels(metadataDirectory,5,plot=True)
 frameclock = nidaq[:,1]
-
 frames = AssignFrameTime(frameclock,plot=True)
-
 photodiode = nidaq[:,0]
-
 st = DetectPhotodiodeChanges(photodiode,plot=True)
+sparse = GetSparseNoise(metadataDirectory,size = (8,9))
+sparse = sparse[st]
+np.save(os.path.join(saveDirectory,'sparse.times.npy'),st)
+np.save(os.path.join(saveDirectory,'sparse.map.npy'),sparse)
+np.save(os.path.join(saveDirectory,'sparse.id.npy'),np.range(sparse.shape[0]))
+# props = ['Ori','SFreq','TFreq','Contrast']
+# stimProps = GetStimulusInfo(metadataDirectory+'Log0.csv',props)
+#%%
 
+metadataDirectory = 'Z:/RawData/Hedes/2022-08-04/1'
+# metadataDirectory = 'Z:\\RawData\\SS113\\2022-07-11\\1\\'
 
-props = ['Ori','SFreq','TFreq','Contrast']
+nidaq,chans,nt = GetNidaqChannels(metadataDirectory, plot=False)
+arduino,ardChans, at = GetArduinoData(metadataDirectory ,plot=False)
 
-stimProps = GetStimulusInfo(directory+'Log1.csv',props)
+# arduinoSync = np.round(arduino[:,-1]).astype(bool)
+arduinoSync = arduino[:,ardChans == 'sync'][:,0]
+arduinoSync2 = arduino[:,-1]
+niSync =  nidaq[:,chans=='sync'][:,0]
+niSync2 =  nidaq[:,-1]  
 
-sparse = GetSparseNoise(directory+'SparseNoise0.bin',size = (8,9))
+# niSync = np.round(nidaq[:,-1]).astype(bool)
 
 #%%
-arduino,arduinoTime = GetArduinoData(directory+'ArduinoInput0.csv',plot=True)
-arduinoSync = np.round(arduino[:,-1]).astype(bool)
-niSync = np.round(nidaq[:,-1]).astype(bool)
-niTimes = np.arange(len(niSync))/1000
+plt.close('all')
+at_new = arduinoDelayCompensation(niSync,arduinoSync, nt,at)
+plt.plot(nt,niSync)
+plt.plot(at_new,arduinoSync)
+#%%
+movement1 =  arduino[:,ardChans == 'rotary1'][:,0]
+movement2 =  arduino[:,ardChans == 'rotary2'][:,0]
+v,d = DetectWheelMove(movement1,movement2,at_new)
+
+# np.save(os.path.join(saveDirectory,'running.timestamps.npy'),at_new)
+# np.save(os.path.join(saveDirectory,'running.speed.npy'),v)
+
+
 
 #%%
-newTime = arduinoDelayCompensation(niSync,arduinoSync, niTimes,arduinoTime)
+
 
 #%%
-movement1 =  arduino[:,0]
-movement2 =  arduino[:,1]
-v,d = DetectWheelMove(movement1,movement2,arduinoTime)
-
-#%%
-camera1 = arduino[:,2]
+camera1 = arduino[:,ardChans == 'camera1']
 st = AssignFrameTime(camera1,plot=True)
 
 import cv2
-cap = cv2.VideoCapture(directory+'Video0.avi')
+cap = cv2.VideoCapture(metadataDirectory+'/Video00.avi')
 #%%
 b,a = sp.signal.butter(1, 30, btype='low', fs=1000)
 sigFilt = sp.signal.filtfilt(b,a,photodiode)

@@ -5,8 +5,17 @@ Created on Wed Aug 31 15:37:13 2022
 @author: LABadmin
 """
 
+import numpy as np
 
-def linearAnalyticalSolution(x, y, noIntercept=True):
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Aug 31 15:37:13 2022
+
+@author: LABadmin
+"""
+
+
+def linearAnalyticalSolution(x, y, noIntercept=False):
     n = len(x)
     a = (np.sum(y) * np.sum(x ** 2) - np.sum(x) * np.sum(x * y)) / (
         n * np.sum(x ** 2) - np.sum(x) ** 2
