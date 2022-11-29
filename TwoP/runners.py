@@ -11,17 +11,21 @@ from suite2p.registration.zalign import compute_zpos
 from joblib import Parallel, delayed
 import numpy as np
 import time
-import Data.Bonsai
-import Data.TwoP
 import traceback
 import io
+import os
 import skimage.io
-import Data.TwoP.process_tiff
-import Data.TwoP.preprocess_traces
-import Data.Bonsai.extract_data
+import glob
+import scipy as sp
+from Data.TwoP.process_tiff import *
+from Data.TwoP.preprocess_traces import *
+from Data.Bonsai.extract_data import *
+from Data.TwoP.general import *
 
 
-def _process_s2p_singlePlane(planeDirs, zstackPath, saveDirectory, piezo, plane):
+def _process_s2p_singlePlane(
+    planeDirs, zstackPath, saveDirectory, piezo, plane
+):
     currDir = planeDirs[plane]
 
     F = np.load(os.path.join(currDir, "F.npy"), allow_pickle=True).T
@@ -37,51 +41,62 @@ def _process_s2p_singlePlane(planeDirs, zstackPath, saveDirectory, piezo, plane)
     stat = stat[isCell[0, :].astype(bool)]
 
     cellLocs = np.zeros((len(stat), 3))
+    ySpan = ops["refImg"].shape[1]
 
     F = zero_signal(F)
     N = zero_signal(N)
 
     # Get cell locations
     for i, s in enumerate(stat):
-        cellLocs[i, :] = np.append(s["med"], plane)
-    # FCORR stuff
+        relYpos = s["med"][1] / ySpan
+        piezoInd = int(np.round((len(piezo) - 1) * relYpos))
+        zPos = piezo[piezoInd]
+        cellLocs[i, :] = np.append(s["med"], zPos)
 
-    Fc, regPars, F_binValues, N_binValues = correct_neuropil(
-        F, N, fs
-    )  # What to do when negative?
+    # FCORR stuff
+    Fc, regPars, F_binValues, N_binValues = correct_neuropil(F, N, fs)
     F0 = get_F0(Fc, fs)
     dF = get_delta_F_over_F(Fc, F0)
 
     zprofiles = None
     zTrace = None
+    # hack to avoid random reg directories
+    ops["reg_file"] = os.path.join(currDir, "data.bin")
+    ops["ops_path"] = os.path.join(currDir, "ops.npy")
     if not (zstackPath is None):
-        refImg = ops["refImg"]
-        zFileName = os.path.join(
-            saveDirectory, "zstackAngle_plane" + str(plane) + ".tif"
-        )
-        if not (os.path.exists(zFileName)):
-            zstack = register_zstack(
-                zstackPath, spacing=1, piezo=piezo, target_image=refImg
+        try:
+            refImg = ops["refImg"]
+            zFileName = os.path.join(
+                saveDirectory, "zstackAngle_plane" + str(plane) + ".tif"
             )
-            skimage.io.imsave(zFileName, zstack)
-            _, zcorr = compute_zpos(zstack, ops)
-        elif not ("zcorr" in ops.keys()):
-            zstack = io.imread(zFileName)
-            ops, zcorr = compute_zpos(zstack, ops)
-            np.save(ops["ops_path"], ops)
-        else:
-            zstack = skimage.io.imread(zFileName)
-            zcorr = ops["zcorr"]
-        zTrace = np.argmax(zcorr, 0)
-        zprofiles = extract_zprofiles(
-            currDir,
-            zstack,
-            neuropil_correction=regPars[1, :],
-            metadata=processing_metadata,
-            smooting_factor=2,
-        )
+            if not (os.path.exists(zFileName)):
+                zstack = register_zstack(
+                    zstackPath, spacing=1, piezo=piezo, target_image=refImg
+                )
+                skimage.io.imsave(zFileName, zstack)
+                _, zcorr = compute_zpos(zstack, ops)
+            elif not ("zcorr" in ops.keys()):
+                zstack = skimage.io.imread(zFileName)
 
-        Fcz = correct_zmotion(dF, zprofiles, zTrace)
+                ops, zcorr = compute_zpos(zstack, ops)
+                np.save(ops["ops_path"], ops)
+            else:
+                zstack = skimage.io.imread(zFileName)
+                zcorr = ops["zcorr"]
+            zTrace = np.argmax(zcorr, 0)
+            zprofiles = extract_zprofiles(
+                currDir,
+                zstack,
+                neuropil_correction=regPars[1, :],
+                metadata=processing_metadata,
+                smooting_factor=2,
+            )
+
+            Fcz = correct_zmotion(dF, zprofiles, zTrace)
+        except:
+            print(currDir + ": Error in correcting z-motion")
+            print(traceback.format_exc())
+            Fcz = dF
     else:
         Fcz = dF
     results = {
@@ -133,7 +148,9 @@ def process_s2p_directory(
     planeDirs = glob.glob(os.path.join(suite2pDirectory, "plane*"))
     combinedDir = glob.glob(os.path.join(suite2pDirectory, "combined*"))
 
-    ops = np.load(os.path.join(combinedDir[0], "ops.npy"), allow_pickle=True).item()
+    ops = np.load(
+        os.path.join(combinedDir[0], "ops.npy"), allow_pickle=True
+    ).item()
     numPlanes = ops["nplanes"]
 
     planeRange = np.arange(numPlanes)
@@ -143,10 +160,10 @@ def process_s2p_directory(
     preTime = time.time()
     # TODO: extract planes
     if not debug:
-        jobnum = os.cpu_count() - 2
+        jobnum = 4
     else:
         jobnum = 1
-    results = Parallel(n_jobs=jobnum, verbose=100)(
+    results = Parallel(n_jobs=jobnum, verbose=5)(
         delayed(_process_s2p_singlePlane)(
             planeDirs, zstackPath, saveDirectory, piezoTraces[:, p], p
         )
@@ -170,17 +187,16 @@ def process_s2p_directory(
         planes = np.append(planes, np.ones(res.shape[1]) * planeRange[i])
     # TODO: combine results
     # check that all signals are the same length
-    minLength = 10 ** 10
+    minLength = 10**10
     for i in range(len(signalList)):
         minLength = np.min((signalList[i].shape[0], minLength))
     for i in range(len(signalList)):
         signalList[i] = signalList[i][:minLength, :]
-        zTraces[i] = zTraces[i][:minLength]
+        if not zTraces[i] is None:
+            zTraces[i] = zTraces[i][:minLength]
     signals = np.hstack(signalList)
     locs = np.vstack(signalLocs)
     zProfile = np.hstack(zProfiles)
-    # give a piezo-based z estimate
-    locs[:, -1] = piezoTraces[0, locs[:, -1].astype(int)]
     zTrace = np.vstack(zTraces)
 
     # save stuff
@@ -224,8 +240,11 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
     gratingsSfreq = []
     gratingsTfreq = []
     gratingsContrast = []
+    gratingsReward = []
 
-    for di in metadataDirectory_dirList:
+    for dInd, di in enumerate(metadataDirectory_dirList):
+        if len(os.listdir(di)) == 0:
+            continue
         # move on if not a directory (even though ideally all should be a dir)
         # if (not(os.path.isdir(di))):
         #     continue
@@ -235,17 +254,18 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
         # if not(expDir.isnumeric()) or not (int(expDir) in folder_numbers):
         #     continue
 
-        frame_in_file = fpf[int(expDir) - 1]
+        # frame_in_file = fpf[int(expDir) - 1]
+        frame_in_file = fpf[dInd]
 
         try:
-            nidaq, chans, nt = GetNidaqChannels(di, plot=False)
+            nidaq, chans, nt = get_nidaq_channels(di, plot=False)
         except Exception as e:
             print("Error is directory: " + di)
             print("Could not load nidaq data")
             print(e)
         try:
             frameclock = nidaq[:, chans == "frameclock"]
-            frames = AssignFrameTime(frameclock, plot=False)
+            frames = assign_frame_time(frameclock, plot=False)
             # take only first frames of each go
             frameDiffMedian = np.median(np.diff(frames))
             firstFrames = frames[::planes]
@@ -261,11 +281,13 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
 
         sparseFile = glob.glob(os.path.join(di, "SparseNoise*"))
         propsFile = glob.glob(os.path.join(di, "props*.csv"))
-        propTitles = np.loadtxt(propsFile[0], dtype=str, delimiter=",", ndmin=2).T
+        propTitles = np.loadtxt(
+            propsFile[0], dtype=str, delimiter=",", ndmin=2
+        ).T
 
         try:
             photodiode = nidaq[:, chans == "photodiode"]
-            frameChanges = DetectPhotodiodeChanges(photodiode, plot=False)
+            frameChanges = detect_photodiode_changes(photodiode, plot=False)
             frameChanges += lastFrame
 
             # TODO: Have one long st and et list with different identities so a
@@ -273,7 +295,7 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
 
             # Treat as sparse noise
             if len(sparseFile) != 0:
-                sparseMap = GetSparseNoise(di)
+                sparseMap = get_sparse_noise(di)
                 sparseMap = sparseMap[: len(frameChanges), :, :]
 
                 # calculate the end of the final frame
@@ -293,7 +315,9 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
                     frameChanges[1::],
                     frameChanges[-1] + (frameChanges[14] - frameChanges[13]),
                 )
-                retinal_stimType = np.empty((len(frameChanges), 1), dtype=object)
+                retinal_stimType = np.empty(
+                    (len(frameChanges), 1), dtype=object
+                )
                 retinal_stimType[::13] = "Off"
                 retinal_stimType[1::13] = "On"
                 retinal_stimType[2::13] = "Off"
@@ -312,7 +336,7 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
                 retinalEt.append(retinal_et.reshape(-1, 1).copy())
                 retinalStim.append(retinal_stimType.copy())
             if propTitles[0] == "Ori":
-                stimProps = GetStimulusInfo(di)
+                stimProps = get_stimulus_info(di)
 
                 st = frameChanges[::2].reshape(-1, 1).copy()
                 et = frameChanges[1::2].reshape(-1, 1).copy()
@@ -327,34 +351,56 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
                     stimProps.Ori.to_numpy().reshape(-1, 1).astype(int).copy()
                 )
                 gratingsSfreq.append(
-                    stimProps.SFreq.to_numpy().reshape(-1, 1).astype(float).copy()
+                    stimProps.SFreq.to_numpy()
+                    .reshape(-1, 1)
+                    .astype(float)
+                    .copy()
                 )
                 gratingsTfreq.append(
-                    stimProps.TFreq.to_numpy().reshape(-1, 1).astype(float).copy()
+                    stimProps.TFreq.to_numpy()
+                    .reshape(-1, 1)
+                    .astype(float)
+                    .copy()
                 )
                 gratingsContrast.append(
-                    stimProps.Contrast.to_numpy().reshape(-1, 1).astype(float).copy()
+                    stimProps.Contrast.to_numpy()
+                    .reshape(-1, 1)
+                    .astype(float)
+                    .copy()
                 )
+                if "Reward" in stimProps.columns:
+                    gratingsReward.append(
+                        np.array(
+                            [x in "True" for x in np.array(stimProps.Reward)]
+                        )
+                        .reshape(-1, 1)
+                        .astype(bool)
+                        .copy()
+                    )
+                else:
+                    gratingsReward.append(np.zeros_like(st) * np.nan)
+
         except:
             print("Error in stimulus processing in directory: " + di)
+            print(traceback.format_exc())
         # arduino handling
         try:
-            ardData, ardChans, at = GetArduinoData(di)
+            ardData, ardChans, at = get_arduino_data(di)
             nidaqSync = nidaq[:, chans == "sync"][:, 0]
             ardSync = ardData[:, ardChans == "sync"][:, 0]
-            at_new = arduinoDelayCompensation(nidaqSync, ardSync, nt, at)
+            at_new = arduino_delay_compensation(nidaqSync, ardSync, nt, at)
 
             movement1 = ardData[:, ardChans == "rotary1"][:, 0]
             movement2 = ardData[:, ardChans == "rotary2"][:, 0]
-            v, d = DetectWheelMove(movement1, movement2, at_new)
+            v, d = detect_wheel_move(movement1, movement2, at_new)
 
             wheelTimes.append(at_new + lastFrame)
             velocity.append(v)
 
             camera1 = ardData[:, ardChans == "camera1"][:, 0]
             camera2 = ardData[:, ardChans == "camera2"][:, 0]
-            cam1Frames = AssignFrameTime(camera1, fs=1, plot=False)
-            cam2Frames = AssignFrameTime(camera2, fs=1, plot=False)
+            cam1Frames = assign_frame_time(camera1, fs=1, plot=False)
+            cam2Frames = assign_frame_time(camera2, fs=1, plot=False)
             cam1Frames = at_new[cam1Frames.astype(int)]
             cam2Frames = at_new[cam2Frames.astype(int)]
 
@@ -369,50 +415,82 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
         np.hstack(frameTimes).reshape(-1, 1),
     )
     np.save(
-        os.path.join(saveDirectory, "planes.delay.npy"), planeTimeDelta.reshape(-1, 1)
+        os.path.join(saveDirectory, "planes.delay.npy"),
+        planeTimeDelta.reshape(-1, 1),
     )
 
-    np.save(os.path.join(saveDirectory, "sparse.map.npy"), np.vstack(sparseMaps))
-    np.save(os.path.join(saveDirectory, "sparse.st.npy"), np.vstack(sparseSt))
-    np.save(os.path.join(saveDirectory, "sparse.et.npy"), np.vstack(sparseEt))
+    if len(sparseMaps) > 0:
+        np.save(
+            os.path.join(saveDirectory, "sparse.map.npy"),
+            np.vstack(sparseMaps),
+        )
+        np.save(
+            os.path.join(saveDirectory, "sparse.st.npy"), np.vstack(sparseSt)
+        )
+        np.save(
+            os.path.join(saveDirectory, "sparse.et.npy"), np.vstack(sparseEt)
+        )
+    if len(retinalStim) > 0:
+        np.save(
+            os.path.join(saveDirectory, "retinal.st.npy"), np.vstack(retinalSt)
+        )
+        np.save(
+            os.path.join(saveDirectory, "retinal.et.npy"), np.vstack(retinalEt)
+        )
+        np.save(
+            os.path.join(saveDirectory, "retinal.stim.npy"),
+            np.vstack(retinalStim),
+        )
+    if len(gratingsSt) > 0:
+        np.save(
+            os.path.join(saveDirectory, "gratings.st.npy"),
+            np.vstack(gratingsSt),
+        )
+        np.save(
+            os.path.join(saveDirectory, "gratings.et.npy"),
+            np.vstack(gratingsEt),
+        )
+        np.save(
+            os.path.join(saveDirectory, "gratings.ori.npy"),
+            np.vstack(gratingsOri),
+        )
+        np.save(
+            os.path.join(saveDirectory, "gratings.spatialF.npy"),
+            np.vstack(gratingsSfreq),
+        )
+        np.save(
+            os.path.join(saveDirectory, "gratings.temporalF.npy"),
+            np.vstack(gratingsTfreq),
+        )
+        np.save(
+            os.path.join(saveDirectory, "gratings.contrast.npy"),
+            np.vstack(gratingsContrast),
+        )
+    if len(gratingsReward) > 0:
+        np.save(
+            os.path.join(saveDirectory, "gratings.reward.npy"),
+            np.vstack(gratingsReward),
+        )
+    if len(wheelTimes) > 0:
+        np.save(
+            os.path.join(saveDirectory, "wheel.timestamps.npy"),
+            np.hstack(wheelTimes).reshape(-1, 1),
+        )
+        np.save(
+            os.path.join(saveDirectory, "wheel.velocity.npy"),
+            np.hstack(velocity).reshape(-1, 1),
+        )
+        np.save(
+            os.path.join(saveDirectory, "face.timestamps.npy"),
+            np.hstack(faceTimes).reshape(-1, 1),
+        )
+        np.save(
+            os.path.join(saveDirectory, "body.timestamps.npy"),
+            np.hstack(bodyTimes).reshape(-1, 1),
+        )
 
-    np.save(os.path.join(saveDirectory, "retinal.st.npy"), np.vstack(retinalSt))
-    np.save(os.path.join(saveDirectory, "retinal.et.npy"), np.vstack(retinalEt))
-    np.save(os.path.join(saveDirectory, "retinal.stim.npy"), np.vstack(retinalStim))
 
-    np.save(os.path.join(saveDirectory, "gratings.st.npy"), np.vstack(gratingsSt))
-    np.save(os.path.join(saveDirectory, "gratings.et.npy"), np.vstack(gratingsEt))
-    np.save(os.path.join(saveDirectory, "gratings.ori.npy"), np.vstack(gratingsOri))
-    np.save(
-        os.path.join(saveDirectory, "gratings.spatialF.npy"), np.vstack(gratingsSfreq)
-    )
-    np.save(
-        os.path.join(saveDirectory, "gratings.temporalF.npy"), np.vstack(gratingsTfreq)
-    )
-    np.save(
-        os.path.join(saveDirectory, "gratings.contrast.npy"),
-        np.vstack(gratingsContrast),
-    )
-
-    np.save(
-        os.path.join(saveDirectory, "wheel.timestamps.npy"),
-        np.hstack(wheelTimes).reshape(-1, 1),
-    )
-    np.save(
-        os.path.join(saveDirectory, "wheel.velocity.npy"),
-        np.hstack(velocity).reshape(-1, 1),
-    )
-    np.save(
-        os.path.join(saveDirectory, "face.timestamps.npy"),
-        np.hstack(faceTimes).reshape(-1, 1),
-    )
-    np.save(
-        os.path.join(saveDirectory, "body.timestamps.npy"),
-        np.hstack(bodyTimes).reshape(-1, 1),
-    )
-
-
-def read_csv_produce_directories(dataEntry):
+def read_csv_produce_directories(dataEntry, s2pDir, zstackDir, metadataDir):
     name = dataEntry.Name
     date = dataEntry.Date
     zstack = dataEntry.Zstack
@@ -429,7 +507,7 @@ def read_csv_produce_directories(dataEntry):
     else:
         zstackDirectory = os.path.join(zstackDir, name, date, str(zstack))
         zstackPath = glob.glob(os.path.join(zstackDirectory, "*.tif"))[0]
-    metadataDirectory = os.path.join(metadatadataDir, name, date)
+    metadataDirectory = os.path.join(metadataDir, name, date)
 
     if np.isnan(saveDir):
         saveDirectory = os.path.join(s2pDirectory, "PreprocessedFiles")

@@ -2,6 +2,7 @@
 import numpy as np
 from scipy import optimize
 from general import linearAnalyticalSolution
+import pandas as pd
 
 
 def GetCalciumAligned(signal, time, eventTimes, window, planes, delays):

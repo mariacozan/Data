@@ -5,10 +5,11 @@ import glob
 import re
 from numba import jit, cuda
 import numba
-
+import pandas as pd
 from sklearn import linear_model
 from sklearn.metrics import mean_squared_error
-
+import os
+from Data.TwoP.general import *
 
 """Pre-process data recorded with Bonsai."""
 # -*- coding: utf-8 -*-
@@ -19,7 +20,7 @@ Created on Wed Apr 13 09:26:53 2022
 """
 
 
-def GetNidaqChannels(niDaqFilePath, numChannels=None, plot=False):
+def get_nidaq_channels(niDaqFilePath, numChannels=None, plot=False):
     """
     Get the nidaq channels
 
@@ -45,10 +46,14 @@ def GetNidaqChannels(niDaqFilePath, numChannels=None, plot=False):
             print("ERROR: no channel file and no channel number given")
             return None
         channels = np.loadtxt(dirs[0], delimiter=",", dtype=str)
-        numChannels = len(channels)
+        if len(channels.shape) > 0:
+            numChannels = len(channels)
+            nidaqSignals = dict.fromkeys(channels, None)
+        else:
+            numChannels = 1
+            nidaqSignals = {str(channels): None}
     else:
         channels = range(numChannels)
-    nidaqSignals = dict.fromkeys(channels, None)
 
     niDaqFilePath = get_file_in_directory(niDaqFilePath, "NidaqInput")
     niDaq = np.fromfile(niDaqFilePath, dtype=np.float64)
@@ -58,9 +63,11 @@ def GetNidaqChannels(niDaqFilePath, numChannels=None, plot=False):
         # file was somehow screwed. find the good bit of the data
         correctDuration = int(len(niDaq) // numChannels)
         lastGoodEntry = correctDuration * numChannels
-        niDaq = np.reshape(niDaq[:lastGoodEntry], (correctDuration, numChannels))
+        niDaq = np.reshape(
+            niDaq[:lastGoodEntry], (correctDuration, numChannels)
+        )
     if plot:
-        f, ax = plt.subplots(numChannels, sharex=True)
+        f, ax = plt.subplots(max(2, numChannels), sharex=True)
         for i in range(numChannels):
             ax[i].plot(niDaq[:, i])
     nidaqTime = np.arange(niDaq.shape[0]) / 1000
@@ -68,7 +75,7 @@ def GetNidaqChannels(niDaqFilePath, numChannels=None, plot=False):
     return niDaq, channels, nidaqTime
 
 
-def AssignFrameTime(frameClock, th=0.5, fs=1000, plot=False):
+def assign_frame_time(frameClock, th=0.5, fs=1000, plot=False):
     """
     The function assigns a time in ms to a frame time.
 
@@ -101,7 +108,7 @@ def AssignFrameTime(frameClock, th=0.5, fs=1000, plot=False):
     return pkTimes[::2] / fs
 
 
-def DetectPhotodiodeChanges(
+def detect_photodiode_changes(
     photodiode,
     plot=False,
     kernel=10,
@@ -164,7 +171,7 @@ def DetectPhotodiodeChanges(
     return crossings / fs
 
 
-def DetectWheelMove(
+def detect_wheel_move(
     moveA, moveB, timestamps, rev_res=1024, total_track=59.847, plot=False
 ):
     """
@@ -195,7 +202,9 @@ def DetectWheelMove(
     counterA[risingEdgeA[risingEdgeA_B == 1]] = -1
 
     # detect B move
-    risingEdgeB = np.where(np.diff(moveB > 0, prepend=True))[0]  # np.diff(moveB)
+    risingEdgeB = np.where(np.diff(moveB > 0, prepend=True))[
+        0
+    ]  # np.diff(moveB)
     risingEdgeB = risingEdgeB[moveB[risingEdgeB] == 1]
     risingEdgeB_A = moveB[risingEdgeB]
     counterA[risingEdgeB[risingEdgeB_A == 0]] = -1
@@ -240,7 +249,7 @@ def DetectWheelMove(
     return velocity, distance
 
 
-def GetSparseNoise(filePath, size=None):
+def get_sparse_noise(filePath, size=None):
     """
     Pulls the sparse noise from the directory
 
@@ -269,7 +278,7 @@ def GetSparseNoise(filePath, size=None):
     return np.moveaxis(np.flip(sparse, 2), -1, 1)
 
 
-def GetLogEntry(filePath, entryString):
+def get_log_entry(filePath, entryString):
     """
 
 
@@ -305,7 +314,7 @@ def GetLogEntry(filePath, entryString):
     return StimProperties
 
 
-def GetStimulusInfo(filePath, props=None):
+def get_stimulus_info(filePath, props=None):
     """
 
 
@@ -376,7 +385,7 @@ def GetStimulusInfo(filePath, props=None):
 
 
 # @jit(forceobj=True)
-def GetArduinoData(arduinoDirectory, plot=False):
+def get_arduino_data(arduinoDirectory, plot=False):
     """
     Retrieves the arduino data, regularises it (getting rid of small intervals)
     Always assume last entry is the timepoints
@@ -422,7 +431,9 @@ def GetArduinoData(arduinoDirectory, plot=False):
 
 
 # @jit((numba.b1, numba.b1, numba.double, numba.double,numba.int8))
-def arduinoDelayCompensation(nidaqSync, ardSync, niTimes, ardTimes, batchSize=100):
+def arduino_delay_compensation(
+    nidaqSync, ardSync, niTimes, ardTimes, batchSize=100
+):
     """
 
 
@@ -455,9 +466,9 @@ def arduinoDelayCompensation(nidaqSync, ardSync, niTimes, ardTimes, batchSize=10
         niChange = niChange[1:]
     niChangeTime = niTimes[niChange]
     niChangeDuration = np.round(np.diff(niChangeTime), 4)
-    niChangeDuration_norm = (niChangeDuration - np.mean(niChangeDuration)) / np.std(
-        niChangeDuration
-    )
+    niChangeDuration_norm = (
+        niChangeDuration - np.mean(niChangeDuration)
+    ) / np.std(niChangeDuration)
 
     ardChange = np.where(np.diff(ardTick, prepend=True) > 0)[0][:]
     # check that first state change is clear
@@ -466,15 +477,15 @@ def arduinoDelayCompensation(nidaqSync, ardSync, niTimes, ardTimes, batchSize=10
     ardChangeTime = ardTimes[ardChange]
     ardChangeDuration = np.round(np.diff(ardChangeTime), 4)
     # niChangeTime = np.append(niChangeTime,np.zeros_like(ardChangeTime))
-    ardChangeDuration_norm = (ardChangeDuration - np.mean(ardChangeDuration)) / np.std(
-        ardChangeDuration
-    )
+    ardChangeDuration_norm = (
+        ardChangeDuration - np.mean(ardChangeDuration)
+    ) / np.std(ardChangeDuration)
 
     newArdTimes = ardTimes.copy()
     # reg = linear_model.LinearRegression()
 
     mses = []
-    mse_prev = 10 ** 4
+    mse_prev = 10**4
     a_list = []
     b_list = []
     # a = []
@@ -531,7 +542,8 @@ def arduinoDelayCompensation(nidaqSync, ardSync, niTimes, ardTimes, batchSize=10
             ardChangeTime = ardChangeTime * b + a
 
             lastPoint = (
-                ardChangeTime[np.min([len(ardChangeTime) - 1, i + batchSize])] + 0.00001
+                ardChangeTime[np.min([len(ardChangeTime) - 1, i + batchSize])]
+                + 0.00001
             )
     return newArdTimes
 
@@ -594,15 +606,19 @@ def get_file_in_directory(directory, simpleName):
 def get_piezo_data(ops):
     piezoDir = ops["data_path"][0]
     nplanes = ops["nplanes"]
-    nidaq, channels, nt = GetNidaqChannels(piezoDir, plot=False)
+    nidaq, channels, nt = get_nidaq_channels(piezoDir, plot=False)
     frameclock = nidaq[:, channels == "frameclock"]
-    frames = AssignFrameTime(frameclock, plot=False)
+    frames = assign_frame_time(frameclock, plot=False)
     piezo = nidaq[:, channels == "piezo"].copy()[:, 0]
-    planePiezo = get_piezo_trace_for_plane(piezo, frames, nt, imagingPlanes=nplanes)
+    planePiezo = get_piezo_trace_for_plane(
+        piezo, frames, nt, imagingPlanes=nplanes
+    )
     return planePiezo
 
 
 def get_ops_file(suite2pDir):
     combinedDir = glob.glob(os.path.join(suite2pDir, "combined*"))
-    ops = np.load(os.path.join(combinedDir[0], "ops.npy"), allow_pickle=True).item()
+    ops = np.load(
+        os.path.join(combinedDir[0], "ops.npy"), allow_pickle=True
+    ).item()
     return ops

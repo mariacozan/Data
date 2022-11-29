@@ -5,22 +5,27 @@ import os
 import numpy as np
 import pandas as pd
 import skimage
+import scipy as sp
 from skimage import io
 from skimage import data
 from skimage import metrics
 from skimage.util import img_as_float
 import tifftools as tt
+import pandas as pd
 
 # from pystackreg import StackReg
 from suite2p.extraction.extract import extract_traces
 from suite2p.extraction.masks import create_masks
 from suite2p.registration.register import register_frames, compute_reference
 from suite2p.registration import rigid
-from TwoP.preprocess_traces import correct_neuropil
+from Data.TwoP.preprocess_traces import correct_neuropil
 from suite2p.default_ops import default_ops
 from numba import jit
 
-# @jit(forceobj=True)
+from Data.TwoP.preprocess_traces import zero_signal
+
+
+@jit(forceobj=True)
 def _fill_plane_piezo(stack, piezoNorm, i, spacing=1):
     """
 
@@ -82,7 +87,13 @@ def _fill_plane_piezo(stack, piezoNorm, i, spacing=1):
             depth = 0
         for yt in np.arange(currPixelY, endPointY):
             # print (depth,yt)
-            line = interp((depth, yt, np.arange(0, resolutionx)))
+            line = interp(
+                (
+                    depth,
+                    yt,
+                    np.arange(0, resolutionx),
+                )
+            )
             slantImg[yt, 0:resolutionx] = line
         currPixelY += numPixelsY[d]
         currDepth += depth
@@ -100,7 +111,9 @@ def _register_swipe(zstack, start, finish, progress):
             stackRange = range(i - 1, i + 2)
         # print(str(i))
         miniStack = zstack[stackRange]
-        res = register_frames(miniStack[1, :, :], miniStack[:, :, :].astype(np.int16))
+        res = register_frames(
+            miniStack[1, :, :], miniStack[:, :, :].astype(np.int16)
+        )
         zstack[stackRange, :, :] = res[0]
     return zstack
 
@@ -124,11 +137,16 @@ def registerStacktoRef(zstack, refImg, ops=default_ops()):
         zstack.astype(np.int16),
         *rigid.compute_masks(
             refImg=refImg,
-            maskSlope=ops["spatial_taper"] if ops["1Preg"] else 3 * ops["smooth_sigma"],
+            maskSlope=ops["spatial_taper"]
+            if ops["1Preg"]
+            else 3 * ops["smooth_sigma"],
         )
     )
     corrRes = rigid.phasecorr(
-        data, ref.astype(np.complex64), ops["maxregshift"], ops["smooth_sigma_time"]
+        data,
+        ref.astype(np.complex64),
+        ops["maxregshift"],
+        ops["smooth_sigma_time"],
     )
     maxCor = np.argmax(corrRes[-1])
     dx = corrRes[1][maxCor]
@@ -176,7 +194,9 @@ def register_zstack(tiff_path, spacing=1, piezo=None, target_image=None):
     for i in range(planes):
         # sr = StackReg(StackReg.TRANSLATION)
         # reg_arrays = sr.register_transform_stack(image[i,:,:,:], reference=reference)
-        res = register_frames(image[i, 0, :, :], image[i, :, :, :].astype(np.int16))
+        res = register_frames(
+            image[i, 0, :, :], image[i, :, :, :].astype(np.int16)
+        )
         # zstack[i,:,:] = np.mean(reg_arrays, axis=0)
         zstack[i, :, :] = np.mean(res[0], axis=0)
     zstack = register_zstack_frames(zstack)
@@ -207,11 +227,11 @@ def register_zstack(tiff_path, spacing=1, piezo=None, target_image=None):
 
 
 def _moffat(r, B, A, alpha, beta):
-    return B + A * (1 + (((r) ** 2) / alpha ** 2)) ** -beta
+    return B + A * (1 + (((r) ** 2) / alpha**2)) ** -beta
 
 
 def _gauss(x, A, mu, sigma):
-    return A * np.exp(-((x - mu) ** 2) / (2.0 * sigma ** 2))
+    return A * np.exp(-((x - mu) ** 2) / (2.0 * sigma**2))
 
 
 # TODO
@@ -267,8 +287,12 @@ def extract_zprofiles(
     - to register frames, see line 285 (rigid registration) in /suite2p/registration/register for rigid registration
     """
 
-    stat = np.load(os.path.join(extraction_path, "stat.npy"), allow_pickle=True)
-    ops = np.load(os.path.join(extraction_path, "ops.npy"), allow_pickle=True).item()
+    stat = np.load(
+        os.path.join(extraction_path, "stat.npy"), allow_pickle=True
+    )
+    ops = np.load(
+        os.path.join(extraction_path, "ops.npy"), allow_pickle=True
+    ).item()
     isCell = np.load(os.path.join(extraction_path, "iscell.npy")).astype(bool)
 
     ### Step 1
@@ -300,8 +324,12 @@ def extract_zprofiles(
     # zProfileC = np.zeros(zProfile.shape)
 
     if not (smooting_factor is None):
-        zProfile = sp.ndimage.gaussian_filter1d(zProfile, smooting_factor, axis=0)
-    depths = np.arange(-(zstack.shape[0] - 1) / 2, (zstack.shape[0] - 1) / 2 + 1)
+        zProfile = sp.ndimage.gaussian_filter1d(
+            zProfile, smooting_factor, axis=0
+        )
+    depths = np.arange(
+        -(zstack.shape[0] - 1) / 2, (zstack.shape[0] - 1) / 2 + 1
+    )
     metadata["zprofiles_raw"] = zprofileRaw
     metadata["zprofiles_neuropil"] = Fneu.T
 
