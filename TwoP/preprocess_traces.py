@@ -1,7 +1,7 @@
 """Pre-process calcium traces extracted from tiff files."""
 import numpy as np
 from scipy import optimize
-from general import linearAnalyticalSolution
+from Data.TwoP.general import linearAnalyticalSolution
 import pandas as pd
 
 
