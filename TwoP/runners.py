@@ -21,10 +21,11 @@ from Data.TwoP.process_tiff import *
 from Data.TwoP.preprocess_traces import *
 from Data.Bonsai.extract_data import *
 from Data.TwoP.general import *
+from Data.TwoP.folder_defs import create_processing_ops
 
 
 def _process_s2p_singlePlane(
-    planeDirs, zstackPath, saveDirectory, piezo, plane
+    pops, planeDirs, zstackPath, saveDirectory, piezo, plane
 ):
     currDir = planeDirs[plane]
 
@@ -55,7 +56,9 @@ def _process_s2p_singlePlane(
 
     # FCORR stuff
     Fc, regPars, F_binValues, N_binValues = correct_neuropil(F, N, fs)
-    F0 = get_F0(Fc, fs)
+    F0 = get_F0(
+        Fc, fs, prctl_F=pops["f0_percentile"], window_size=pops["f0_window"]
+    )
     dF = get_delta_F_over_F(Fc, F0)
 
     zprofiles = None
@@ -92,7 +95,13 @@ def _process_s2p_singlePlane(
                 smooting_factor=2,
             )
 
-            Fcz = correct_zmotion(dF, zprofiles, zTrace)
+            Fcz = correct_zmotion(
+                dF,
+                zprofiles,
+                zTrace,
+                ignore_faults=pops["remove_z_extremes"],
+                metadata=pops,
+            )
         except:
             print(currDir + ": Error in correcting z-motion")
             print(traceback.format_exc())
@@ -106,11 +115,39 @@ def _process_s2p_singlePlane(
         "zTrace": zTrace,
         "locs": cellLocs,
     }
+
+    if pops["plot"]:
+        for i in range(dF.shape[-1]):
+            f, ax = plt.subplots(5, 1)
+            ax[0].plot(F[:, i], "b")
+            ax[0].plot(N[:, i], "r")
+            ax[0].legend(["Fluorescence", "Neuropil"])
+            ax[1].plot(Fc[:, i], "k")
+            ax[1].plot(F0[:, i], "b", linewidth=4)
+            ax[1].legend(["Corrected F", "F0"])
+            ax[1].plot(Fc[:, i], "k")
+            ax[2].plot(Fcz[:, i], "k")
+            ax[2].plot(dF[:, i], "b--", linewidth=3)
+            ax[2].legend(["dF/F", "dF/F z-zcorrected"])
+            ax[3].plot(zTrace)
+            ax[3].legend(["Z trace"])
+            ax[4].plot(zprofiles[:, i])
+            ax[4].legend(["Z profile"])
+            plt.savefig(
+                os.path.join(
+                    saveDirectory,
+                    "Plane" + str(plane) + "Neuron" + str(i) + ".png",
+                ),
+                format="png",
+            )
+
+            plt.close()
     return results
 
 
 def process_s2p_directory(
     suite2pDirectory,
+    pops=create_processing_ops(),
     piezoTraces=None,
     zstackPath=None,
     saveDirectory=None,
@@ -165,7 +202,7 @@ def process_s2p_directory(
         jobnum = 1
     results = Parallel(n_jobs=jobnum, verbose=5)(
         delayed(_process_s2p_singlePlane)(
-            planeDirs, zstackPath, saveDirectory, piezoTraces[:, p], p
+            pops, planeDirs, zstackPath, saveDirectory, piezoTraces[:, p], p
         )
         for p in planeRange
     )
@@ -208,7 +245,9 @@ def process_s2p_directory(
 
 
 # bonsai + arduino
-def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
+def process_metadata_directory(
+    bonsai_dir, ops, pops=create_processing_ops, saveDirectory=None
+):
 
     if saveDirectory is None:
         saveDirectory = os.path.join(suite2pDirectory, "ProcessedData")
@@ -258,14 +297,14 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
         frame_in_file = fpf[dInd]
 
         try:
-            nidaq, chans, nt = get_nidaq_channels(di, plot=False)
+            nidaq, chans, nt = get_nidaq_channels(di, plot=pops["plot"])
         except Exception as e:
             print("Error is directory: " + di)
             print("Could not load nidaq data")
             print(e)
         try:
             frameclock = nidaq[:, chans == "frameclock"]
-            frames = assign_frame_time(frameclock, plot=False)
+            frames = assign_frame_time(frameclock, plot=pops["plot"])
             # take only first frames of each go
             frameDiffMedian = np.median(np.diff(frames))
             firstFrames = frames[::planes]
@@ -287,7 +326,9 @@ def process_metadata_directory(bonsai_dir, ops, saveDirectory=None):
 
         try:
             photodiode = nidaq[:, chans == "photodiode"]
-            frameChanges = detect_photodiode_changes(photodiode, plot=False)
+            frameChanges = detect_photodiode_changes(
+                photodiode, plot=pops["plot"]
+            )
             frameChanges += lastFrame
 
             # TODO: Have one long st and et list with different identities so a

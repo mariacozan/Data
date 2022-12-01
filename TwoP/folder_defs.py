@@ -13,3 +13,15 @@ def define_directories():
     metadataDir = "Z:\\RawData\\"
 
     return csvDir, s2pDir, zstackDir, metadataDir
+
+
+def create_processing_ops():
+    pops = {
+        "debug": False,
+        "plot": True,
+        "f0_percentile": 8,
+        "f0_window": 60,
+        "zcorrect_mode": "Stack",
+        "remove_z_extremes": True,
+    }
+    return pops

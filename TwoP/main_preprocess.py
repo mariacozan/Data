@@ -18,6 +18,7 @@ from Data.TwoP.folder_defs import *
 
 # %%
 csvDir, s2pDir, zstackDir, metadataDir = define_directories()
+pops = create_processing_ops()
 
 # %%
 # read database
@@ -52,14 +53,15 @@ for i in range(len(database)):
         print("processing suite2p data")
         fc = process_s2p_directory(
             s2pDirectory,
+            pops,
             planePiezo,
             zstackPath,
             saveDirectory=saveDirectory,
             ignorePlanes=[0],
-            debug=False,
+            debug=pops["debug"],
         )
         print("reading bonsai data")
-        process_metadata_directory(metadataDirectory, ops, saveDirectory)
+        process_metadata_directory(metadataDirectory, ops, pops, saveDirectory)
     else:
         print("skipping " + str(database.loc[i]))
 
