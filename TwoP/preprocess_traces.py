@@ -85,9 +85,14 @@ def correct_neuropil(
     Fc = F - F0
     Nc = N - N0
 
+    ti = np.nanargmin((F0 - N0) / N0, 0)
+
     lowActivity = np.nanpercentile(F, 50, 0)
     for iROI in range(nROIs):
         # TODO: verbose options
+
+        Fc += F0[ti[iROI], iROI]
+        Nc += N0[ti[iROI], iROI]
 
         iN = Nc[:, iROI]
         iF = Fc[:, iROI]
@@ -179,7 +184,9 @@ def correct_zmotion(F, zprofiles, ztrace, ignore_faults=True, metadata={}):
     signal = F / correctionMatrix
 
     if ignore_faults:
-        signal = remove_zcorrected_faults(ztrace, correctionFactor, signal, metadata)
+        signal = remove_zcorrected_faults(
+            ztrace, correctionFactor, signal, metadata
+        )
     return signal
 
 
@@ -194,7 +201,9 @@ def get_F0(Fc, fs, prctl_F=8, window_size=60, verbose=True):
     F0 = np.zeros_like(Fc)
     Fc_pd = pd.DataFrame(Fc)
     F0 = np.array(
-        Fc_pd.rolling(window_size).quantile(prctl_F * 0.01, interpolation="midpoint")
+        Fc_pd.rolling(window_size).quantile(
+            prctl_F * 0.01, interpolation="midpoint"
+        )
     )
     # for t in range(0, Fc.shape[0]):
     #     rng = np.arange(t, np.min([len(Fc), t + window_size]))
@@ -207,7 +216,7 @@ def get_F0(Fc, fs, prctl_F=8, window_size=60, verbose=True):
 
 # TODO
 def get_delta_F_over_F(Fc, F0):
-    return (Fc - F0) / np.fmax(1, np.nanmean(abs(F0), 0))
+    return (Fc - F0) / np.fmax(1, np.nanmean(F0, 0))
 
 
 def remove_zcorrected_faults(ztrace, zprofiles, signals, metadata={}):
@@ -257,7 +266,9 @@ def remove_zcorrected_faults(ztrace, zprofiles, signals, metadata={}):
             if planeCrossingInd == 0:
                 signals[np.where(ztrace > zc[1]), i] = np.nan
             else:
-                signals[np.where(ztrace < zc[planeCrossingInd - 1]), i] = np.nan
+                signals[
+                    np.where(ztrace < zc[planeCrossingInd - 1]), i
+                ] = np.nan
         # Check if differential is positive before crossing
         # If that's the case we're golden, the problem is if negative
         # Then it's a trough and if depends on what side of the trough we are

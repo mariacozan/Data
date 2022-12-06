@@ -16,6 +16,7 @@ import io
 import os
 import skimage.io
 import glob
+import pickle
 import scipy as sp
 from Data.TwoP.process_tiff import *
 from Data.TwoP.preprocess_traces import *
@@ -140,6 +141,15 @@ def _process_s2p_singlePlane(
                 ),
                 format="png",
             )
+
+            with open(
+                os.path.join(
+                    saveDirectory,
+                    "Plane" + str(plane) + "Neuron" + str(i) + ".fig.pickle",
+                ),
+                "wb",
+            ) as file:
+                pickle.dump(f, file)
 
             plt.close()
     return results
@@ -359,19 +369,33 @@ def process_metadata_directory(
                 retinal_stimType = np.empty(
                     (len(frameChanges), 1), dtype=object
                 )
-                retinal_stimType[::13] = "Off"
-                retinal_stimType[1::13] = "On"
-                retinal_stimType[2::13] = "Off"
-                retinal_stimType[3::13] = "Grey"
-                retinal_stimType[4::13] = "ChirpF"
-                retinal_stimType[5::13] = "Grey"
-                retinal_stimType[6::13] = "ChirpC"
-                retinal_stimType[7::13] = "Grey"
-                retinal_stimType[8::13] = "Off"
-                retinal_stimType[9::13] = "Blue"
-                retinal_stimType[10::13] = "Off"
-                retinal_stimType[11::13] = "Green"
+                # retinal_stimType[::13] = "Off"
+                # retinal_stimType[1::13] = "On"
+                # retinal_stimType[2::13] = "Off"
+                # retinal_stimType[3::13] = "Grey"
+                # retinal_stimType[4::13] = "ChirpF"
+                # retinal_stimType[5::13] = "Grey"
+                # retinal_stimType[6::13] = "ChirpC"
+                # retinal_stimType[7::13] = "Grey"
+                # retinal_stimType[8::13] = "Off"
+                # retinal_stimType[9::13] = "Blue"
+                # retinal_stimType[10::13] = "Off"
+                # retinal_stimType[11::13] = "Green"
+                # retinal_stimType[12::13] = "Off"
+
                 retinal_stimType[12::13] = "Off"
+                retinal_stimType[0::13] = "On"
+                retinal_stimType[1::13] = "Off"
+                retinal_stimType[2::13] = "Grey"
+                retinal_stimType[3::13] = "ChirpF"
+                retinal_stimType[4::13] = "Grey"
+                retinal_stimType[5::13] = "ChirpC"
+                retinal_stimType[6::13] = "Grey"
+                retinal_stimType[7::13] = "Off"
+                retinal_stimType[8::13] = "Blue"
+                retinal_stimType[9::13] = "Off"
+                retinal_stimType[10::13] = "Green"
+                retinal_stimType[11::13] = "Off"
 
                 retinalSt.append(frameChanges.reshape(-1, 1).copy())
                 retinalEt.append(retinal_et.reshape(-1, 1).copy())
