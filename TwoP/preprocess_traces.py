@@ -91,8 +91,8 @@ def correct_neuropil(
     for iROI in range(nROIs):
         # TODO: verbose options
 
-        Fc += F0[ti[iROI], iROI]
-        Nc += N0[ti[iROI], iROI]
+        Fc[:, iROI] += F0[ti[iROI], iROI]
+        Nc[:, iROI] += N0[ti[iROI], iROI]
 
         iN = Nc[:, iROI]
         iF = Fc[:, iROI]
@@ -132,12 +132,8 @@ def correct_neuropil(
         # b = min(b, 1)
         corrected_sig = iF - b * iN
 
-        overCInd = np.where(corrected_sig < 0)[0]
-        corrected_sig[overCInd] = np.nanpercentile(
-            corrected_sig[corrected_sig >= 0], prctl_F
-        )
         # determine neuropil correct signal
-        signal[:, iROI] = corrected_sig
+        signal[:, iROI] = corrected_sig.copy()
     return signal, regPars, F_binValues, N_binValues
 
 
@@ -199,12 +195,22 @@ def register_zaxis():
 def get_F0(Fc, fs, prctl_F=8, window_size=60, verbose=True):
     window_size = int(round(fs * window_size))
     F0 = np.zeros_like(Fc)
-    Fc_pd = pd.DataFrame(Fc)
+    Fc_pd = pd.DataFrame(
+        np.pad(
+            Fc,
+            [
+                (window_size, 0),
+                (0, 0),
+            ],
+            mode="median",
+        )
+    )
     F0 = np.array(
         Fc_pd.rolling(window_size).quantile(
             prctl_F * 0.01, interpolation="midpoint"
         )
     )
+    F0 = F0[window_size:]
     # for t in range(0, Fc.shape[0]):
     #     rng = np.arange(t, np.min([len(Fc), t + window_size]))
     #     F0t = np.nanpercentile(Fc[rng, :], prctl_F, 0)

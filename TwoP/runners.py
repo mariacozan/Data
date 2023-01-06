@@ -119,21 +119,42 @@ def _process_s2p_singlePlane(
 
     if pops["plot"]:
         for i in range(dF.shape[-1]):
+            # Print full
             f, ax = plt.subplots(5, 1)
             ax[0].plot(F[:, i], "b")
             ax[0].plot(N[:, i], "r")
-            ax[0].legend(["Fluorescence", "Neuropil"])
+            ax[0].legend(
+                ["Fluorescence", "Neuropil"],
+                bbox_to_anchor=(1.01, 1),
+                loc="upper left",
+            )
             ax[1].plot(Fc[:, i], "k")
-            ax[1].plot(F0[:, i], "b", linewidth=4)
-            ax[1].legend(["Corrected F", "F0"])
+            ax[1].plot(F0[:, i], "b", linewidth=4, zorder=10)
+            ax[1].legend(
+                ["Corrected F", "F0"],
+                bbox_to_anchor=(1.01, 1),
+                loc="upper left",
+            )
             ax[1].plot(Fc[:, i], "k")
             ax[2].plot(Fcz[:, i], "k")
             ax[2].plot(dF[:, i], "b--", linewidth=3)
-            ax[2].legend(["dF/F", "dF/F z-zcorrected"])
+            ax[2].legend(
+                ["dF/F", "dF/F z-zcorrected"],
+                bbox_to_anchor=(1.01, 1),
+                loc="upper left",
+            )
             ax[3].plot(zTrace)
-            ax[3].legend(["Z trace"])
-            ax[4].plot(zprofiles[:, i])
-            ax[4].legend(["Z profile"])
+            ax[3].legend(
+                ["Z trace"], bbox_to_anchor=(1.01, 1), loc="upper left"
+            )
+            ax[4].plot(zprofiles[:, i], range(zprofiles.shape[0]))
+            ax[4].legend(
+                ["Z profile"], bbox_to_anchor=(1.01, 1), loc="upper left"
+            )
+
+            manager = plt.get_current_fig_manager()
+            manager.full_screen_toggle()
+
             plt.savefig(
                 os.path.join(
                     saveDirectory,
@@ -151,7 +172,62 @@ def _process_s2p_singlePlane(
             ) as file:
                 pickle.dump(f, file)
 
-            plt.close()
+            # Print Part
+            f, ax = plt.subplots(5, 1)
+            ax[0].plot(F[1:500, i], "b")
+            ax[0].plot(N[1:500, i], "r")
+            ax[0].legend(
+                ["Fluorescence", "Neuropil"],
+                bbox_to_anchor=(1.01, 1),
+                loc="upper left",
+            )
+            ax[1].plot(Fc[1:500, i], "k")
+            ax[1].plot(F0[1:500, i], "b", linewidth=4)
+            ax[1].legend(
+                ["Corrected F", "F0"],
+                bbox_to_anchor=(1.01, 1),
+                loc="upper left",
+            )
+            ax[1].plot(Fc[1:500, i], "k")
+            ax[2].plot(Fcz[1:500, i], "k")
+            ax[2].plot(dF[1:500, i], "b--", linewidth=3)
+            ax[2].legend(
+                ["dF/F", "dF/F z-zcorrected"],
+                bbox_to_anchor=(1.01, 1),
+                loc="upper left",
+            )
+            ax[3].plot(zTrace)
+            ax[3].legend(["Z trace"])
+            ax[4].plot(zprofiles[:, i], range(zprofiles.shape[0]))
+            ax[4].legend(
+                ["Z profile"], bbox_to_anchor=(1.01, 1), loc="upper left"
+            )
+
+            manager = plt.get_current_fig_manager()
+            manager.full_screen_toggle()
+
+            plt.savefig(
+                os.path.join(
+                    saveDirectory,
+                    "Plane" + str(plane) + "Neuron" + str(i) + "_zoom.png",
+                ),
+                format="png",
+            )
+
+            with open(
+                os.path.join(
+                    saveDirectory,
+                    "Plane"
+                    + str(plane)
+                    + "Neuron"
+                    + str(i)
+                    + "_zoom.fig.pickle",
+                ),
+                "wb",
+            ) as file:
+                pickle.dump(f, file)
+
+            plt.close("all")
     return results
 
 
