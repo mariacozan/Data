@@ -143,14 +143,16 @@ def _process_s2p_singlePlane(
                 bbox_to_anchor=(1.01, 1),
                 loc="upper left",
             )
-            ax[3].plot(zTrace)
-            ax[3].legend(
-                ["Z trace"], bbox_to_anchor=(1.01, 1), loc="upper left"
-            )
-            ax[4].plot(zprofiles[:, i], range(zprofiles.shape[0]))
-            ax[4].legend(
-                ["Z profile"], bbox_to_anchor=(1.01, 1), loc="upper left"
-            )
+            if not zTrace is None:
+                ax[3].plot(zTrace)
+                ax[3].legend(
+                    ["Z trace"], bbox_to_anchor=(1.01, 1), loc="upper left"
+                )
+            if not zprofiles is None:
+                ax[4].plot(zprofiles[:, i], range(zprofiles.shape[0]))
+                ax[4].legend(
+                    ["Z profile"], bbox_to_anchor=(1.01, 1), loc="upper left"
+                )
 
             manager = plt.get_current_fig_manager()
             manager.full_screen_toggle()
@@ -196,12 +198,16 @@ def _process_s2p_singlePlane(
                 bbox_to_anchor=(1.01, 1),
                 loc="upper left",
             )
-            ax[3].plot(zTrace)
-            ax[3].legend(["Z trace"])
-            ax[4].plot(zprofiles[:, i], range(zprofiles.shape[0]))
-            ax[4].legend(
-                ["Z profile"], bbox_to_anchor=(1.01, 1), loc="upper left"
-            )
+            if not zTrace is None:
+                ax[3].plot(zTrace)
+                ax[3].legend(
+                    ["Z trace"], bbox_to_anchor=(1.01, 1), loc="upper left"
+                )
+            if not zprofiles is None:
+                ax[4].plot(zprofiles[:, i], range(zprofiles.shape[0]))
+                ax[4].legend(
+                    ["Z profile"], bbox_to_anchor=(1.01, 1), loc="upper left"
+                )
 
             manager = plt.get_current_fig_manager()
             manager.full_screen_toggle()
