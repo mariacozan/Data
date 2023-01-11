@@ -530,7 +530,10 @@ def arduino_delay_compensation(
         b = np.median(niChangeDuration / ardChangeDuration)
 
         lastPoint = 0
-        for i in range(0, len(ardChangeTime) + 1, 100):
+        for i in range(0, len(ardChangeTime) + 1, batchSize):
+            if i >= len(ardChangeTime):
+                continue
+
             x = ardChangeTime[i : np.min([len(ardChangeTime), i + batchSize])]
             y = niChangeTime[i : np.min([len(ardChangeTime), i + batchSize])]
 

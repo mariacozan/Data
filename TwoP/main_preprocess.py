@@ -11,6 +11,7 @@ import pandas as pd
 import os
 import glob
 import pickle
+import traceback
 from Data.TwoP.runners import *
 from Data.Bonsai.extract_data import *
 from Data.TwoP.folder_defs import *
@@ -22,6 +23,8 @@ pops = create_processing_ops()
 
 # %%
 # read database
+# In the file the values should be Name, Date, Zstack dir number, planes to ignore
+# and save directory (if none default is wanted) and proces (True,False)
 database = pd.read_csv(
     csvDir,
     dtype={
@@ -38,30 +41,40 @@ database = pd.read_csv(
 # %% run over data base
 for i in range(len(database)):
     if database.loc[i]["Process"]:
-        print("reading directories")
-        (
-            s2pDirectory,
-            zstackPath,
-            metadataDirectory,
-            saveDirectory,
-        ) = read_csv_produce_directories(
-            database.loc[i], s2pDir, zstackDir, metadataDir
-        )
-        ops = get_ops_file(s2pDirectory)
-        print("getting piezo data")
-        planePiezo = get_piezo_data(ops)
-        print("processing suite2p data")
-        fc = process_s2p_directory(
-            s2pDirectory,
-            pops,
-            planePiezo,
-            zstackPath,
-            saveDirectory=saveDirectory,
-            ignorePlanes=[0],
-            debug=pops["debug"],
-        )
-        print("reading bonsai data")
-        process_metadata_directory(metadataDirectory, ops, pops, saveDirectory)
+        try:
+            print("reading directories")
+            (
+                s2pDirectory,
+                zstackPath,
+                metadataDirectory,
+                saveDirectory,
+            ) = read_csv_produce_directories(
+                database.loc[i], s2pDir, zstackDir, metadataDir
+            )
+            ignorePlanes = np.atleast_1d(
+                np.array(database.loc[0]["IgnorePlanes"]).astype(int)
+            )
+            ops = get_ops_file(s2pDirectory)
+            print("getting piezo data")
+            planePiezo = get_piezo_data(ops)
+            print("processing suite2p data")
+            fc = process_s2p_directory(
+                s2pDirectory,
+                pops,
+                planePiezo,
+                zstackPath,
+                saveDirectory=saveDirectory,
+                ignorePlanes=ignorePlanes,
+                debug=pops["debug"],
+            )
+            print("reading bonsai data")
+            process_metadata_directory(
+                metadataDirectory, ops, pops, saveDirectory
+            )
+        except Exception:
+            print("Could not process due to errors, moving to next batch.")
+            print(traceback.format_exc())
+
     else:
         print("skipping " + str(database.loc[i]))
 

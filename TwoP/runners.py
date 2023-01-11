@@ -18,6 +18,8 @@ import skimage.io
 import glob
 import pickle
 import scipy as sp
+import warnings
+
 from Data.TwoP.process_tiff import *
 from Data.TwoP.preprocess_traces import *
 from Data.Bonsai.extract_data import *
@@ -373,6 +375,14 @@ def process_metadata_directory(
     gratingsContrast = []
     gratingsReward = []
 
+    circleSt = []
+    circleEt = []
+    circleX = []
+    circleY = []
+    circleDiameter = []
+    circleWhite = []
+    circleDuration = []
+
     for dInd, di in enumerate(metadataDirectory_dirList):
         if len(os.listdir(di)) == 0:
             continue
@@ -482,6 +492,53 @@ def process_metadata_directory(
                 retinalSt.append(frameChanges.reshape(-1, 1).copy())
                 retinalEt.append(retinal_et.reshape(-1, 1).copy())
                 retinalStim.append(retinal_stimType.copy())
+
+            if len(propTitles) >= 3:
+                if propTitles[2] == "Diameter":
+                    stimProps = get_stimulus_info(di)
+                    circle_et = np.append(
+                        frameChanges[1::],
+                        frameChanges[-1] + np.median(np.diff(frameChanges)),
+                    )
+
+                    circleSt.append(frameChanges.reshape(-1, 1).copy())
+                    circleEt.append(circle_et.reshape(-1, 1).copy())
+
+                    circleX.append(
+                        stimProps.X.to_numpy()
+                        .reshape(-1, 1)
+                        .astype(float)
+                        .copy()
+                    )
+
+                    circleY.append(
+                        stimProps.Y.to_numpy()
+                        .reshape(-1, 1)
+                        .astype(float)
+                        .copy()
+                    )
+
+                    circleDiameter.append(
+                        stimProps.Diameter.to_numpy()
+                        .reshape(-1, 1)
+                        .astype(float)
+                        .copy()
+                    )
+
+                    circleWhite.append(
+                        stimProps.White.to_numpy()
+                        .reshape(-1, 1)
+                        .astype(float)
+                        .copy()
+                    )
+
+                    circleDuration.append(
+                        stimProps.Dur.to_numpy()
+                        .reshape(-1, 1)
+                        .astype(float)
+                        .copy()
+                    )
+
             if propTitles[0] == "Ori":
                 stimProps = get_stimulus_info(di)
 
@@ -489,9 +546,11 @@ def process_metadata_directory(
                 et = frameChanges[1::2].reshape(-1, 1).copy()
 
                 if len(stimProps) != len(st):
-                    raise ValueError(
-                        "Number of frames and stimuli do not match. Skpping"
-                    )
+                    # raise ValueError(
+                    #     "Number of frames and stimuli do not match. Skpping"
+                    # )
+                    warnings.warn("Number of frames and stimuli do not match")
+
                 gratingsSt.append(st)
                 gratingsEt.append(et)
                 gratingsOri.append(
@@ -613,6 +672,37 @@ def process_metadata_directory(
             os.path.join(saveDirectory, "gratings.contrast.npy"),
             np.vstack(gratingsContrast),
         )
+
+    if len(circleSt) > 0:
+        np.save(
+            os.path.join(saveDirectory, "circles.st.npy"),
+            np.vstack(circleSt),
+        )
+        np.save(
+            os.path.join(saveDirectory, "circles.et.npy"),
+            np.vstack(circleEt),
+        )
+        np.save(
+            os.path.join(saveDirectory, "circles.xnpy"),
+            np.vstack(circleX),
+        )
+        np.save(
+            os.path.join(saveDirectory, "circles.y.npy"),
+            np.vstack(circleY),
+        )
+        np.save(
+            os.path.join(saveDirectory, "circles.diameter.npy"),
+            np.vstack(circleDiameter),
+        )
+        np.save(
+            os.path.join(saveDirectory, "circles.isWhite.npy"),
+            np.vstack(circleWhite),
+        )
+        np.save(
+            os.path.join(saveDirectory, "circles.duration.npy"),
+            np.vstack(circleDuration),
+        )
+
     if len(gratingsReward) > 0:
         np.save(
             os.path.join(saveDirectory, "gratings.reward.npy"),
@@ -648,13 +738,28 @@ def read_csv_produce_directories(dataEntry, s2pDir, zstackDir, metadataDir):
     # compose directories
     s2pDirectory = os.path.join(s2pDir, name, date, "suite2p")
 
+    if not os.path.exists(s2pDirectory):
+        raise ValueError(
+            "suite 2p directory " + s2pDirectory + "was not found."
+        )
     if (type(zstack) is float) and (np.isnan(zstack)):
         zstackPath = None
         zstackDirectory = None
     else:
         zstackDirectory = os.path.join(zstackDir, name, date, str(zstack))
-        zstackPath = glob.glob(os.path.join(zstackDirectory, "*.tif"))[0]
+        try:
+            zstackPath = glob.glob(os.path.join(zstackDirectory, "*.tif"))[0]
+        except:
+            raise ValueError(
+                "Z stack Directory not found. Please check the number in the processing csv"
+            )
+
     metadataDirectory = os.path.join(metadataDir, name, date)
+
+    if not os.path.exists(metadataDirectory):
+        raise ValueError(
+            "metadata directory " + metadataDirectory + "was not found."
+        )
 
     if np.isnan(saveDir):
         saveDirectory = os.path.join(s2pDirectory, "PreprocessedFiles")

@@ -18,7 +18,7 @@ def define_directories():
 def create_processing_ops():
     pops = {
         "debug": True,
-        "plot": True,
+        "plot": False,
         "f0_percentile": 8,
         "f0_window": 60,
         "zcorrect_mode": "Stack",
