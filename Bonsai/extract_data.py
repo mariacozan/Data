@@ -282,12 +282,12 @@ def get_sparse_noise(filePath, size=None):
         if len(dirs) == 0:
             print("ERROR: no channel file and no channel number given")
             return None
-        size = np.flip(np.loadtxt(dirs[0], delimiter=",", dtype=int))
+        size = np.loadtxt(dirs[0], delimiter=",", dtype=int)
     sparse[sparse == -128] = 0.5
     sparse[sparse == -1] = 1
 
     sparse = np.reshape(
-        sparse, (int(len(sparse) / (size[0] * size[1])), size[1], size[0])
+        sparse, (int(len(sparse) / (size[1] * size[0])), size[0], size[1])
     )
 
     return np.moveaxis(np.flip(sparse, 2), -1, 1)
