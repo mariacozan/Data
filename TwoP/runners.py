@@ -683,7 +683,7 @@ def process_metadata_directory(
             np.vstack(circleEt),
         )
         np.save(
-            os.path.join(saveDirectory, "circles.xnpy"),
+            os.path.join(saveDirectory, "circles.x.npy"),
             np.vstack(circleX),
         )
         np.save(
