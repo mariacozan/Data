@@ -115,7 +115,7 @@ def detect_photodiode_changes(
     upThreshold=0.2,
     downThreshold=0.4,
     fs=1000,
-    waitTime=5000,
+    waitTime=10000,
 ):
     """
     The function detects photodiode changes using a 'Schmitt Trigger', that is, by
@@ -139,19 +139,34 @@ def detect_photodiode_changes(
     w = np.ones(kernel) / kernel
     # sigFilt = sp.signal.medfilt(sigFilt,kernel)
     sigFilt = np.convolve(sigFilt[:, 0], w, mode="same")
+    sigFilt_raw = sigFilt.copy()
 
     maxSig = np.max(sigFilt)
     minSig = np.min(sigFilt)
+
+    mean_waitTime = np.nanmean(sigFilt[:waitTime])
+    std_waitTime = np.nanstd(sigFilt[:waitTime])
+
     thresholdU = (maxSig - minSig) * upThreshold
     thresholdD = (maxSig - minSig) * downThreshold
     threshold = (maxSig - minSig) * 0.5
 
     # find thesehold crossings
+    uBaselineCond = sigFilt > (mean_waitTime + 1 * std_waitTime)
+    uThresholdCond = sigFilt > thresholdU
+    dBaselineCond = sigFilt < (mean_waitTime + 1 * std_waitTime)
+    dThresholdCond = sigFilt > thresholdD
     crossingsU = np.where(
-        np.diff(np.array(sigFilt > thresholdU).astype(int), prepend=False) > 0
+        np.diff(
+            np.array(uThresholdCond & uBaselineCond).astype(int), prepend=False
+        )
+        > 0
     )[0]
     crossingsD = np.where(
-        np.diff(np.array(sigFilt > thresholdD).astype(int), prepend=False) < 0
+        np.diff(
+            np.array(dThresholdCond & dBaselineCond).astype(int), prepend=False
+        )
+        < 0
     )[0]
     crossingsU = np.delete(crossingsU, np.where(crossingsU < waitTime)[0])
     crossingsD = np.delete(crossingsD, np.where(crossingsD < waitTime)[0])
@@ -160,7 +175,7 @@ def detect_photodiode_changes(
     if plot:
         f, ax = plt.subplots(1, 1, sharex=True)
         ax.plot(photodiode, label="photodiode raw")
-        ax.plot(sigFilt, label="photodiode filtered")
+        ax.plot(sigFilt_raw, label="photodiode filtered")
         ax.plot(crossings, np.ones(len(crossings)) * threshold, "g*")
         ax.hlines([thresholdU], 0, len(photodiode), "k")
         ax.hlines([thresholdD], 0, len(photodiode), "k")
