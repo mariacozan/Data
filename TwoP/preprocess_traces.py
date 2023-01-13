@@ -11,25 +11,26 @@ def GetCalciumAligned(signal, time, eventTimes, window, planes, delays):
 
     Parameters
     ----------
-    signal : TYPE
-        DESCRIPTION.
-    time : TYPE
-        DESCRIPTION.
-    eventTimes : TYPE
-        DESCRIPTION.
-    window : TYPE
-        DESCRIPTION.
-    planes : TYPE
-        DESCRIPTION.
-    delays : TYPE
-        DESCRIPTION.
+    signal : np.array
+        signal of all ROIs.
+    time : np.array
+        times rom frameclock.
+    eventTimes : np.array
+        times of the stimulus from photodiode.
+    window : np.array
+        time window to show responses, for example: np.array([-1, 4]).reshape(1,-1)
+        for 1 second before stim and 4 seconds after
+    planes : int
+        the number of planes imaged.
+    delays : np.array
+        th delays between each plane.
 
     Returns
     -------
-    TYPE
-        DESCRIPTION.
-    t : TYPE
-        DESCRIPTION.
+    np.array
+        aligned array for each plane.
+    t : np.array
+        the time window in seconds for each frame.
 
     """
     aligned = []
