@@ -26,7 +26,6 @@ from Data.Bonsai.extract_data import *
 from Data.TwoP.general import *
 from Data.TwoP.folder_defs import create_processing_ops
 
-
 def _process_s2p_singlePlane(
     #loading all the file locations
     pops, planeDirs, zstackPath, saveDirectory, piezo, plane
