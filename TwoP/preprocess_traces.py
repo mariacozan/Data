@@ -6,6 +6,32 @@ import pandas as pd
 
 
 def GetCalciumAligned(signal, time, eventTimes, window, planes, delays):
+    """
+    ALigning all the planes so they are aligned in time (since each plane is imaged at a slightly delayed time)
+
+    Parameters
+    ----------
+    signal : TYPE
+        DESCRIPTION.
+    time : TYPE
+        DESCRIPTION.
+    eventTimes : TYPE
+        DESCRIPTION.
+    window : TYPE
+        DESCRIPTION.
+    planes : TYPE
+        DESCRIPTION.
+    delays : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+    t : TYPE
+        DESCRIPTION.
+
+    """
     aligned = []
     run = 0
     ps = np.unique(planes).astype(int)
@@ -230,7 +256,7 @@ def remove_zcorrected_faults(ztrace, zprofiles, signals, metadata={}):
     This functions cleans timepoints in the trace where the imaging takes place
     in a plane that is meaningless as to cell activity.
     This is defined as times when there are two peaks or slopes in the imaging
-    region and the imaging plane is in the second slop.
+    region and the imaging plane is in the second slope.
 
     Parameters
     ----------

@@ -28,68 +28,79 @@ from Data.TwoP.folder_defs import create_processing_ops
 
 
 def _process_s2p_singlePlane(
+    #loading all the file locations
     pops, planeDirs, zstackPath, saveDirectory, piezo, plane
 ):
+    #sets the current directory to the current plane
     currDir = planeDirs[plane]
 
+    #loading all the Suite2P files
     F = np.load(os.path.join(currDir, "F.npy"), allow_pickle=True).T
     N = np.load(os.path.join(currDir, "Fneu.npy")).T
     isCell = np.load(os.path.join(currDir, "iscell.npy")).T
     stat = np.load(os.path.join(currDir, "stat.npy"), allow_pickle=True)
     ops = np.load(os.path.join(currDir, "ops.npy"), allow_pickle=True).item()
     processing_metadata = {}
-
+    
+    #getting frame rate and the Suite2P ROI info from ROIs classified as cells
     fs = ops["fs"]
     F = F[:, isCell[0, :].astype(bool)]
     N = N[:, isCell[0, :].astype(bool)]
     stat = stat[isCell[0, :].astype(bool)]
-
-    cellLocs = np.zeros((len(stat), 3))
-    ySpan = ops["refImg"].shape[1]
+    
 
     F = zero_signal(F)
     N = zero_signal(N)
 
     # Get cell locations
+    cellLocs = np.zeros((len(stat), 3))
+    ySpan = ops["refImg"].shape[1]
     for i, s in enumerate(stat):
         relYpos = s["med"][1] / ySpan
         piezoInd = int(np.round((len(piezo) - 1) * relYpos))
         zPos = piezo[piezoInd]
         cellLocs[i, :] = np.append(s["med"], zPos)
 
-    # FCORR stuff
+    #correcting for neuropil
     Fc, regPars, F_binValues, N_binValues = correct_neuropil(F, N, fs)
     F0 = get_F0(
         Fc, fs, prctl_F=pops["f0_percentile"], window_size=pops["f0_window"]
     )
+    #getting normalised data: dF/F
     dF = get_delta_F_over_F(Fc, F0)
-
+    
+    #z correction
     zprofiles = None
     zTrace = None
     # hack to avoid random reg directories
     ops["reg_file"] = os.path.join(currDir, "data.bin")
     ops["ops_path"] = os.path.join(currDir, "ops.npy")
-    if not (zstackPath is None):
+    
+    if not (zstackPath is None): #unless no Z stack path given, z correction is done
         try:
             refImg = ops["refImg"]
             zFileName = os.path.join(
                 saveDirectory, "zstackAngle_plane" + str(plane) + ".tif"
             )
             if not (os.path.exists(zFileName)):
+                #registering the Z stack
                 zstack = register_zstack(
                     zstackPath, spacing=1, piezo=piezo, target_image=refImg
                 )
                 skimage.io.imsave(zFileName, zstack)
                 _, zcorr = compute_zpos(zstack, ops)
-            elif not ("zcorr" in ops.keys()):
+            elif not ("zcorr" in ops.keys()): #unless z correction was already done, do it now
                 zstack = skimage.io.imread(zFileName)
 
+                #compute the z position
                 ops, zcorr = compute_zpos(zstack, ops)
                 np.save(ops["ops_path"], ops)
             else:
                 zstack = skimage.io.imread(zFileName)
                 zcorr = ops["zcorr"]
+            #creating the z trace
             zTrace = np.argmax(zcorr, 0)
+            #creating z profiles for each cell
             zprofiles = extract_zprofiles(
                 currDir,
                 zstack,
@@ -97,7 +108,7 @@ def _process_s2p_singlePlane(
                 metadata=processing_metadata,
                 smooting_factor=2,
             )
-
+            #correct for z motion (removing z extremes) based on the z profiles
             Fcz = correct_zmotion(
                 dF,
                 zprofiles,
@@ -110,6 +121,7 @@ def _process_s2p_singlePlane(
             print(traceback.format_exc())
             Fcz = dF
     else:
+        #when no z correction is done
         Fcz = dF
     results = {
         "dff": dF,
@@ -118,7 +130,7 @@ def _process_s2p_singlePlane(
         "zTrace": zTrace,
         "locs": cellLocs,
     }
-
+    #plotting the figure with F, corrected F, dF/F, Z trace and Z profile
     if pops["plot"]:
         for i in range(dF.shape[-1]):
             # Print full
@@ -257,11 +269,11 @@ def process_s2p_directory(
 
     Parameters
     ----------
-    suite2pDirectory : TYPE
+    suite2pDirectory : str
         the suite2p parent directory, where the plane directories are.
     piezoTraces : [time X plane] um
         a metadata directory for the piezo trace.
-    zstackPath : TYPE
+    zstackPath : str
         the path of the acquired z-stack.
     saveDirectory : TYPE, optional
         the directory where the processed data will be saved. If None will add a ProcessedData directory to the suite2pdir. The default is None.
@@ -271,25 +283,29 @@ def process_s2p_directory(
     None.
 
     """
-
+    #creating/specifying the directory for all the processed files
     if saveDirectory is None:
         saveDirectory = os.path.join(suite2pDirectory, "ProcessedData")
     if not os.path.isdir(saveDirectory):
         os.makedirs(saveDirectory)
     planeDirs = glob.glob(os.path.join(suite2pDirectory, "plane*"))
     combinedDir = glob.glob(os.path.join(suite2pDirectory, "combined*"))
-
+    
+    #loading ops file to get the number of planes
     ops = np.load(
         os.path.join(combinedDir[0], "ops.npy"), allow_pickle=True
     ).item()
     numPlanes = ops["nplanes"]
-
+    #getting the range of plane and removing the ones that are specified to be ignored
     planeRange = np.arange(numPlanes)
     if not (ignorePlanes is None):
         ignorePlanes = np.intersect1d(planeRange, ignorePlanes)
         planeRange = np.delete(planeRange, ignorePlanes)
     preTime = time.time()
     # TODO: extract planes
+    
+    #if you want to understand what is going on if there is an error, debug can be chosen
+    #however parallel processing cannot be performed, in that case the below code specifies number of parallel jobs
     if not debug:
         jobnum = 4
     else:
@@ -301,10 +317,12 @@ def process_s2p_directory(
         for p in planeRange
     )
     # signalList = _process_s2p_singlePlane(planeDirs,zstackPath,saveDirectory,piezoTraces[:,0],1)
+    #this tells you how long it took to process the data
     postTime = time.time()
     print("Processing took: " + str(postTime - preTime) + " ms")
     planes = np.array([])
-
+    
+    #putting the different results in lists
     signalList = []
     signalLocs = []
     zTraces = []
@@ -325,12 +343,13 @@ def process_s2p_directory(
         signalList[i] = signalList[i][:minLength, :]
         if not zTraces[i] is None:
             zTraces[i] = zTraces[i][:minLength]
+    #converting list to arrays
     signals = np.hstack(signalList)
     locs = np.vstack(signalLocs)
     zProfile = np.hstack(zProfiles)
     zTrace = np.vstack(zTraces)
 
-    # save stuff
+    # saving all the outputs
     np.save(os.path.join(saveDirectory, "calcium.dff.npy"), signals)
     np.save(os.path.join(saveDirectory, "calcium.planes.npy"), planes)
     np.save(os.path.join(saveDirectory, "rois.xyz.npy"), locs)
@@ -342,16 +361,16 @@ def process_s2p_directory(
 def process_metadata_directory(
     bonsai_dir, ops, pops=create_processing_ops, saveDirectory=None
 ):
-
+    #specifying the save directory if not specified before
     if saveDirectory is None:
         saveDirectory = os.path.join(suite2pDirectory, "ProcessedData")
     # metadataDirectory_dirList = glob.glob(os.path.join(metadataDirectory,'*'))
     metadataDirectory_dirList = ops["data_path"]
 
-    fpf = ops["frames_per_folder"]
-    planes = ops["nplanes"]
+    fpf = ops["frames_per_folder"] #getting the size of each experiment in frames
+    planes = ops["nplanes"] #getting number of planes
     lastFrame = 0
-
+    #creating empty list where results will go for the times, the speed, sparse maps, gratings response
     frameTimes = []
     wheelTimes = []
     faceTimes = []
@@ -383,6 +402,8 @@ def process_metadata_directory(
     circleWhite = []
     circleDuration = []
 
+    #in the below for loop all the metadata is gathered for all the experiments
+    #this is done in such a way that the process won't be interrupted if there is a problem with a file
     for dInd, di in enumerate(metadataDirectory_dirList):
         if len(os.listdir(di)) == 0:
             continue
@@ -399,6 +420,7 @@ def process_metadata_directory(
         frame_in_file = fpf[dInd]
 
         try:
+            # getting all the nidaq output
             nidaq, chans, nt = get_nidaq_channels(di, plot=pops["plot"])
         except Exception as e:
             print("Error is directory: " + di)
@@ -437,6 +459,7 @@ def process_metadata_directory(
             # list of st,et and a list with the event type
 
             # Treat as sparse noise
+            #getting the sparse noise stim info
             if len(sparseFile) != 0:
                 sparseMap = get_sparse_noise(di)
                 sparseMap = sparseMap[: len(frameChanges), :, :]
@@ -452,6 +475,7 @@ def process_metadata_directory(
                 sparseMaps.append(sparseMap.copy())
 
                 # np.save(os.path.join(saveDirectory,'sparse.st.npy'),frameChanges)
+            #getting theretinal classification data
             if propTitles[0] == "Retinal":
 
                 retinal_et = np.append(
@@ -493,6 +517,7 @@ def process_metadata_directory(
                 retinalEt.append(retinal_et.reshape(-1, 1).copy())
                 retinalStim.append(retinal_stimType.copy())
 
+            #getting circles data if available
             if len(propTitles) >= 3:
                 if propTitles[2] == "Diameter":
                     stimProps = get_stimulus_info(di)
@@ -538,13 +563,15 @@ def process_metadata_directory(
                         .astype(float)
                         .copy()
                     )
-
+            #getting the orientation data for the different parameters
             if propTitles[0] == "Ori":
                 stimProps = get_stimulus_info(di)
 
                 st = frameChanges[::2].reshape(-1, 1).copy()
                 et = frameChanges[1::2].reshape(-1, 1).copy()
 
+                #checking if the photpdiode changes and the amount of stimuli match;
+                #if not, need to double check the photodiode trace!
                 if len(stimProps) != len(st):
                     # raise ValueError(
                     #     "Number of frames and stimuli do not match. Skpping"
@@ -590,6 +617,7 @@ def process_metadata_directory(
             print("Error in stimulus processing in directory: " + di)
             print(traceback.format_exc())
         # arduino handling
+        # getting the behavioural metadata(sync with NiDaq, running wheel, camera frames)
         try:
             ardData, ardChans, at = get_arduino_data(di)
             nidaqSync = nidaq[:, chans == "sync"][:, 0]
@@ -624,7 +652,9 @@ def process_metadata_directory(
         os.path.join(saveDirectory, "planes.delay.npy"),
         planeTimeDelta.reshape(-1, 1),
     )
-
+    
+    
+    #saving the stimulus identities for all experiments
     if len(sparseMaps) > 0:
         np.save(
             os.path.join(saveDirectory, "sparse.map.npy"),
@@ -728,6 +758,34 @@ def process_metadata_directory(
 
 
 def read_csv_produce_directories(dataEntry, s2pDir, zstackDir, metadataDir):
+    """
+    Function which gets all the directories and composes the directories
+    from all the experiments, then returns the composed directories
+    and creates a save directory if it was not specified.
+
+    Parameters
+    ----------
+    dataEntry : pandas DataFrame
+        the data from the preprocess.csv file in a pandas dataframe.
+    s2pDir : string
+        filepath to the Suite2P processed folder.
+    zstackDir : string
+        filepath to the Z stack.
+    metadataDir : string
+        filepath to the metadata directory.
+
+    Returns
+    -------
+    s2pDirectory : string
+        the composed Suite2P directory.
+    zstackPath : string
+        the composed Z stack directory.
+    metadataDirectory : string
+        the composed metadata directory.
+    saveDirectory : string
+        the save directory where all the processed files are saved.
+
+    """
     name = dataEntry.Name
     date = dataEntry.Date
     zstack = dataEntry.Zstack
