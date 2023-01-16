@@ -254,7 +254,7 @@ def get_delta_F_over_F(Fc, F0):
 
 def remove_zcorrected_faults(ztrace, zprofiles, signals, metadata={}):
     """
-    This functions cleans timepoints in the trace where the imaging takes place
+    This function cleans timepoints in the trace where the imaging takes place
     in a plane that is meaningless as to cell activity.
     This is defined as times when there are two peaks or slopes in the imaging
     region and the imaging plane is in the second slope.
@@ -270,7 +270,7 @@ def remove_zcorrected_faults(ztrace, zprofiles, signals, metadata={}):
 
     Returns
     -------
-    signals: the corrected sigals with the faulty timepoints removed.
+    signals: the corrected signals with the faulty timepoints removed.
 
     """
 
@@ -321,4 +321,25 @@ def _linear(x, a, b):
 
 
 def zero_signal(F):
+    """
+    This function adds the value 19520 to all ROIs across time.This value 
+    represents the absolute zero signal and was obtained by averaging the 
+    darkest frame over many imaging sessions. It is important to note 
+    that the absolute zero value is arbitrary and depends on the voltage range
+    of the PMTs.
+    
+    
+
+    Parameters
+    ----------
+    F : np.ndarray [t x nROIs]
+    Calcium traces (measured signal) of ROIs.
+
+    Returns
+    -------
+    F : np.ndarray [t x nROIs]
+    Calcium traces (measured signal) of ROIs with the addition of the absolute
+    zero signal.
+
+    """
     return F + 19520
