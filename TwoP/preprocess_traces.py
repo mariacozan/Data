@@ -6,33 +6,6 @@ import pandas as pd
 
 
 def GetCalciumAligned(signal, time, eventTimes, window, planes, delays):
-    """
-    ALigning all the planes so they are aligned in time (since each plane is imaged at a slightly delayed time)
-
-    Parameters
-    ----------
-    signal : np.array
-        signal of all ROIs.
-    time : np.array
-        times rom frameclock.
-    eventTimes : np.array
-        times of the stimulus from photodiode.
-    window : np.array
-        time window to show responses, for example: np.array([-1, 4]).reshape(1,-1)
-        for 1 second before stim and 4 seconds after
-    planes : int
-        the number of planes imaged.
-    delays : np.array
-        th delays between each plane.
-
-    Returns
-    -------
-    np.array
-        aligned array for each plane.
-    t : np.array
-        the time window in seconds for each frame.
-
-    """
     aligned = []
     run = 0
     ps = np.unique(planes).astype(int)
